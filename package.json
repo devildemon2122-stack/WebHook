@@ -1,0 +1,27 @@
+{
+  "name": "webhook-pro",
+  "version": "1.0.0",
+  "description": "A modern webhook testing and management application with Postman-like interface",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "vite --host"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.8.1",
+    "lucide-react": "^0.263.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.15",
+    "@types/react-dom": "^18.2.7",
+    "@vitejs/plugin-react": "^4.0.3",
+    "vite": "^4.4.5"
+  },
+  "keywords": ["webhook", "api", "testing", "postman"],
+  "author": "WebHook Pro Team",
+  "license": "MIT"
+} 
