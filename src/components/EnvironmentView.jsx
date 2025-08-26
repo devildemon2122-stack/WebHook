@@ -39,25 +39,60 @@ const EnvironmentView = () => {
 
   // Load environments from localStorage on component mount
   useEffect(() => {
-    const savedEnvironments = localStorage.getItem('webhook_environments')
-    if (savedEnvironments) {
-      const parsed = JSON.parse(savedEnvironments)
-      // migrate to include reserved variables
-      const migrated = parsed.map(ensureReservedVariables)
-      setEnvironments(migrated)
-      if (migrated.length > 0) {
-        setCurrentEnvironment(migrated[0])
+    const loadFromStorage = () => {
+      // Try multiple keys for backward compatibility
+      const keys = ['webhook_environments', 'webhooks-environments', 'webhook-pro-environments']
+      let raw = null
+      let usedKey = null
+      for (const key of keys) {
+        const v = localStorage.getItem(key)
+        if (v) { raw = v; usedKey = key; break }
       }
-      // If migration changed anything, persist
-      if (JSON.stringify(parsed) !== JSON.stringify(migrated)) {
-        localStorage.setItem('webhook_environments', JSON.stringify(migrated))
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        const migrated = parsed.map(ensureReservedVariables)
+        setEnvironments(migrated)
+        if (migrated.length > 0) {
+          setCurrentEnvironment(migrated[0])
+        }
+        // Persist under canonical key if key changed or migration happened
+        if (usedKey !== 'webhook_environments' || JSON.stringify(parsed) !== JSON.stringify(migrated)) {
+          localStorage.setItem('webhook_environments', JSON.stringify(migrated))
+        }
       }
     }
+
+    loadFromStorage()
+
+    const onStorage = (e) => {
+      if (['webhook_environments', 'webhooks-environments', 'webhook-pro-environments'].includes(e.key)) {
+        loadFromStorage()
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   // Save environments to localStorage whenever they change
   useEffect(() => {
     localStorage.setItem('webhook_environments', JSON.stringify(environments))
+  }, [environments])
+
+  // Keep currentEnvironment in sync with environments state so edits render immediately
+  useEffect(() => {
+    if (!environments || environments.length === 0) return
+    if (!currentEnvironment) {
+      setCurrentEnvironment(environments[0])
+      return
+    }
+
+    const updated = environments.find(env => env.id === currentEnvironment.id)
+    if (updated && updated !== currentEnvironment) {
+      setCurrentEnvironment(updated)
+    } else if (!updated) {
+      // Fallback if the current environment was removed
+      setCurrentEnvironment(environments[0])
+    }
   }, [environments])
 
   const handleCreateEnvironment = () => {
@@ -479,7 +514,7 @@ const EnvironmentView = () => {
                     {/* Table Header */}
                     <div style={{
                       display: 'grid',
-                      gridTemplateColumns: '60px 1fr 1fr 100px 80px 60px',
+                      gridTemplateColumns: '60px 1fr 1fr 120px 80px',
                       gap: '16px',
                       padding: '16px 20px',
                       background: 'var(--bg-tertiary)',
@@ -504,7 +539,7 @@ const EnvironmentView = () => {
                           key={index}
                           style={{
                             display: 'grid',
-                            gridTemplateColumns: '60px 1fr 1fr 100px 80px 60px',
+                            gridTemplateColumns: '60px 1fr 1fr 120px 80px',
                             gap: '16px',
                             padding: '16px 20px',
                             borderBottom: '1px solid var(--border-color)',
@@ -638,6 +673,39 @@ const EnvironmentView = () => {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Render Preview Section */}
+              <div style={{ padding: '0 32px 32px' }}>
+                <div style={{
+                  marginTop: '12px',
+                  fontSize: '12px',
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '8px'
+                }}>Render</div>
+                <div style={{
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '16px'
+                }}>
+                  {currentEnvironment && currentEnvironment.variables.filter(v => v.enabled).length > 0 ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '12px' }}>
+                      {currentEnvironment.variables.filter(v => v.enabled).map((v, i) => (
+                        <React.Fragment key={`${v.key}-${i}`}>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{v.key}</div>
+                          <div style={{ fontFamily: 'monospace', fontSize: '12px' }}>
+                            {v.type === 'secret' ? '••••••••' : (v.value || '')}
+                          </div>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No active variables to render</div>
+                  )}
+                </div>
               </div>
             </>
           ) : (
