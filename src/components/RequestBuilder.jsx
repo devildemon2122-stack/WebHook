@@ -36,6 +36,7 @@ const RequestBuilder = () => {
   const [environmentConfig, setEnvironmentConfig] = useState({
     name: '',
     baseUrl: '',
+    envCode: 'dev',
     role: 'client', // client, admin, author
     variables: []
   })
@@ -71,6 +72,24 @@ const RequestBuilder = () => {
     saveRequest,
     saveRequestToBackend
   } = useWebhook()
+
+  // Helper: ensure reserved variables exist on an environment
+  const ensureReservedVariables = useCallback((env) => {
+    const existingKeys = (env.variables || []).map(v => v.key)
+    const updatedVariables = [...(env.variables || [])]
+    let changed = false
+
+    if (!existingKeys.includes('ENV_CODE')) {
+      updatedVariables.unshift({ key: 'ENV_CODE', value: 'dev', type: 'default', enabled: true })
+      changed = true
+    }
+    if (!existingKeys.includes('base_URL')) {
+      updatedVariables.unshift({ key: 'base_URL', value: '', type: 'default', enabled: true })
+      changed = true
+    }
+
+    return changed ? { ...env, variables: updatedVariables, updatedAt: new Date().toISOString() } : env
+  }, [])
 
   // Smart path parameter parsing (Postman-style)
   const parsePathParameters = useCallback((url) => {
@@ -261,26 +280,33 @@ const RequestBuilder = () => {
       const savedEnvironments = localStorage.getItem('webhook_environments')
       if (savedEnvironments) {
         const parsed = JSON.parse(savedEnvironments)
-        setEnvironments(parsed)
+        // migrate to include reserved variables
+        const migrated = parsed.map(ensureReservedVariables)
+        setEnvironments(migrated)
         
         // Update current environment if it still exists
         if (currentEnvironment) {
-          const updatedCurrent = parsed.find(env => env.id === currentEnvironment.id)
+          const updatedCurrent = migrated.find(env => env.id === currentEnvironment.id)
           if (updatedCurrent) {
             setCurrentEnvironment(updatedCurrent)
             // Re-apply environment variables if they changed
             applyEnvironmentVariables(updatedCurrent)
           } else {
             // Current environment was deleted, select first available
-            if (parsed.length > 0) {
-              setCurrentEnvironment(parsed[0])
-              applyEnvironmentVariables(parsed[0])
+            if (migrated.length > 0) {
+              setCurrentEnvironment(migrated[0])
+              applyEnvironmentVariables(migrated[0])
             } else {
               setCurrentEnvironment(null)
             }
           }
-        } else if (parsed.length > 0) {
-          setCurrentEnvironment(parsed[0])
+        } else if (migrated.length > 0) {
+          setCurrentEnvironment(migrated[0])
+        }
+
+        // persist migration if changed
+        if (JSON.stringify(parsed) !== JSON.stringify(migrated)) {
+          localStorage.setItem('webhook_environments', JSON.stringify(migrated))
         }
       }
     }
@@ -296,7 +322,7 @@ const RequestBuilder = () => {
 
     window.addEventListener('storage', handleStorageChange)
     return () => window.removeEventListener('storage', handleStorageChange)
-  }, [])
+  }, [ensureReservedVariables])
 
   // Update headers when auth changes
   useEffect(() => {
@@ -523,21 +549,37 @@ const RequestBuilder = () => {
 
   const handleEnvironmentSave = () => {
     if (environmentConfig.name.trim() && environmentConfig.baseUrl.trim()) {
-      // TODO: Save environment configuration to backend
-      console.log('Environment saved:', environmentConfig)
-      console.log('Backend Integration Point: Send this data to your backend API')
-      console.log('API Endpoint: POST /api/environments')
-      console.log('Data:', {
-        name: environmentConfig.name,
-        baseUrl: environmentConfig.baseUrl,
-        role: environmentConfig.role,
-        variables: environmentConfig.variables,
+      // Construct environment object compatible with EnvironmentView
+      const env = ensureReservedVariables({
+        id: Date.now().toString(),
+        name: environmentConfig.name.trim(),
+        description: '',
+        variables: [
+          { key: 'base_URL', value: environmentConfig.baseUrl.trim(), type: 'default', enabled: true },
+          { key: 'ENV_CODE', value: environmentConfig.envCode || 'dev', type: 'default', enabled: true },
+          ...environmentConfig.variables.map(v => ({
+            key: v.key || '',
+            value: v.value || '',
+            type: 'default',
+            enabled: true
+          }))
+        ],
         createdAt: new Date().toISOString(),
-        createdBy: 'current_user_id' // TODO: Get from authentication context
+        updatedAt: new Date().toISOString()
       })
-      
+
+      // Persist to localStorage
+      const saved = localStorage.getItem('webhook_environments')
+      const existing = saved ? JSON.parse(saved) : []
+      const updated = [...existing, env]
+      localStorage.setItem('webhook_environments', JSON.stringify(updated))
+
+      // Update local state
+      setEnvironments(updated)
+      setCurrentEnvironment(env)
+
       setShowEnvironmentConfig(false)
-      setEnvironmentConfig({ name: '', baseUrl: '', role: 'client', variables: [] })
+      setEnvironmentConfig({ name: '', baseUrl: '', envCode: 'dev', role: 'client', variables: [] })
     }
   }
 
@@ -813,7 +855,7 @@ const RequestBuilder = () => {
               onChange={(e) => {
                 const file = e.target.files[0]
                 if (file) {
-                  handleBodyChange(`File: ${file.name} (${file.size} bytes)`)
+                  handleBodyChange(`File: ${file.name} (${file.size} bytes)`) 
                 }
               }}
             />
@@ -1595,6 +1637,20 @@ const RequestBuilder = () => {
                 placeholder="e.g., https://api.example.com"
               />
             </div>
+
+            <div className="form-group" style={{ marginBottom: '16px' }}>
+              <label className="form-label">ENV Code *</label>
+              <select
+                className="form-select"
+                value={environmentConfig.envCode}
+                onChange={(e) => setEnvironmentConfig(prev => ({ ...prev, envCode: e.target.value }))}
+                style={{ marginLeft: '0' }}
+              >
+                <option value="dev">dev</option>
+                <option value="prod">prod</option>
+                <option value="test">test</option>
+              </select>
+            </div>
             
             <div className="form-group" style={{ marginBottom: '16px' }}>
               <label className="form-label">Role *</label>
@@ -1653,7 +1709,7 @@ const RequestBuilder = () => {
               ))}
             </div>
             
-            {/* Backend Integration Instructions */}
+            {/* Backend Implementation Guide */}
             <div style={{ 
               marginBottom: '20px', 
               padding: '16px', 

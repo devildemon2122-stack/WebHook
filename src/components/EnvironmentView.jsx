@@ -19,14 +19,38 @@ const EnvironmentView = () => {
     variables: []
   })
 
+  // Helper: ensure reserved variables exist on an environment
+  const ensureReservedVariables = (env) => {
+    const existingKeys = (env.variables || []).map(v => v.key)
+    const updatedVariables = [...(env.variables || [])]
+    let changed = false
+
+    if (!existingKeys.includes('ENV_CODE')) {
+      updatedVariables.unshift({ key: 'ENV_CODE', value: 'dev', type: 'default', enabled: true })
+      changed = true
+    }
+    if (!existingKeys.includes('base_URL')) {
+      updatedVariables.unshift({ key: 'base_URL', value: '', type: 'default', enabled: true })
+      changed = true
+    }
+
+    return changed ? { ...env, variables: updatedVariables, updatedAt: new Date().toISOString() } : env
+  }
+
   // Load environments from localStorage on component mount
   useEffect(() => {
     const savedEnvironments = localStorage.getItem('webhook_environments')
     if (savedEnvironments) {
       const parsed = JSON.parse(savedEnvironments)
-      setEnvironments(parsed)
-      if (parsed.length > 0) {
-        setCurrentEnvironment(parsed[0])
+      // migrate to include reserved variables
+      const migrated = parsed.map(ensureReservedVariables)
+      setEnvironments(migrated)
+      if (migrated.length > 0) {
+        setCurrentEnvironment(migrated[0])
+      }
+      // If migration changed anything, persist
+      if (JSON.stringify(parsed) !== JSON.stringify(migrated)) {
+        localStorage.setItem('webhook_environments', JSON.stringify(migrated))
       }
     }
   }, [])
@@ -42,7 +66,11 @@ const EnvironmentView = () => {
         id: Date.now().toString(),
         name: newEnvironment.name.trim(),
         description: newEnvironment.description.trim(),
-        variables: newEnvironment.variables,
+        variables: [
+          { key: 'base_URL', value: '', type: 'default', enabled: true },
+          { key: 'ENV_CODE', value: 'dev', type: 'default', enabled: true },
+          ...newEnvironment.variables
+        ],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }
@@ -83,9 +111,16 @@ const EnvironmentView = () => {
     setEnvironments(prev => prev.map(env => {
       if (env.id === environmentId) {
         const updatedVariables = [...env.variables]
+        const targetVar = updatedVariables[variableIndex]
+        const isReserved = targetVar.key === 'ENV_CODE' || targetVar.key === 'base_URL'
         updatedVariables[variableIndex] = {
           ...updatedVariables[variableIndex],
-          [field]: value
+          // prevent renaming reserved keys
+          ...(field === 'key' && isReserved ? {} : { [field]: value })
+        }
+        // force reserved type to default
+        if (isReserved) {
+          updatedVariables[variableIndex].type = 'default'
         }
         return {
           ...env,
@@ -100,6 +135,11 @@ const EnvironmentView = () => {
   const removeVariable = (environmentId, variableIndex) => {
     setEnvironments(prev => prev.map(env => {
       if (env.id === environmentId) {
+        const targetVar = env.variables[variableIndex]
+        const isReserved = targetVar?.key === 'ENV_CODE' || targetVar?.key === 'base_URL'
+        if (isReserved) {
+          return env
+        }
         const updatedVariables = env.variables.filter((_, index) => index !== variableIndex)
         return {
           ...env,
@@ -513,24 +553,46 @@ const EnvironmentView = () => {
                               fontSize: '13px',
                               outline: 'none'
                             }}
+                            disabled={variable.key === 'ENV_CODE' || variable.key === 'base_URL'}
                           />
 
                           {/* Variable Value */}
-                          <input
-                            type={variable.type === 'secret' ? 'password' : 'text'}
-                            placeholder="Variable value"
-                            value={variable.value}
-                            onChange={(e) => updateVariable(currentEnvironment.id, index, 'value', e.target.value)}
-                            style={{
-                              padding: '8px 12px',
-                              border: '1px solid var(--border-color)',
-                              borderRadius: '4px',
-                              background: 'var(--bg-primary)',
-                              color: 'var(--text-primary)',
-                              fontSize: '13px',
-                              outline: 'none'
-                            }}
-                          />
+                          {variable.key === 'ENV_CODE' ? (
+                            <select
+                              value={variable.value}
+                              onChange={(e) => updateVariable(currentEnvironment.id, index, 'value', e.target.value)}
+                              style={{
+                                padding: '8px 12px',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                background: 'var(--bg-primary)',
+                                color: 'var(--text-primary)',
+                                fontSize: '13px',
+                                outline: 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value="dev">dev</option>
+                              <option value="prod">prod</option>
+                              <option value="test">test</option>
+                            </select>
+                          ) : (
+                            <input
+                              type={variable.type === 'secret' ? 'password' : 'text'}
+                              placeholder="Variable value"
+                              value={variable.value}
+                              onChange={(e) => updateVariable(currentEnvironment.id, index, 'value', e.target.value)}
+                              style={{
+                                padding: '8px 12px',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                background: 'var(--bg-primary)',
+                                color: 'var(--text-primary)',
+                                fontSize: '13px',
+                                outline: 'none'
+                              }}
+                            />
+                          )}
 
                           {/* Variable Type Dropdown */}
                           <select
@@ -546,28 +608,31 @@ const EnvironmentView = () => {
                               outline: 'none',
                               cursor: 'pointer'
                             }}
+                            disabled={variable.key === 'ENV_CODE' || variable.key === 'base_URL'}
                           >
                             <option value="default">Default</option>
                             <option value="secret">Secret</option>
                           </select>
 
                           {/* Actions */}
-                          <button
-                            onClick={() => removeVariable(currentEnvironment.id, index)}
-                            style={{
-                              background: 'var(--danger-color)',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              padding: '6px 8px',
-                              cursor: 'pointer',
-                              fontSize: '12px',
-                              fontWeight: '500'
-                            }}
-                            title="Remove variable"
-                          >
-                            ×
-                          </button>
+                          {!(variable.key === 'ENV_CODE' || variable.key === 'base_URL') && (
+                            <button
+                              onClick={() => removeVariable(currentEnvironment.id, index)}
+                              style={{
+                                background: 'var(--danger-color)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                padding: '6px 8px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontWeight: '500'
+                              }}
+                              title="Remove variable"
+                            >
+                              ×
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
