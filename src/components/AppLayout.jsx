@@ -8,6 +8,7 @@ import ResponsePanel from './ResponsePanel'
 import Logs from './Logs'
 
 const CollectionsView = React.lazy(() => import('./CollectionsView.jsx'))
+const EnvironmentView = React.lazy(() => import('./EnvironmentView.jsx'))
 
 /**
  * AppLayout Component
@@ -44,20 +45,10 @@ const AppLayout = () => {
           </React.Suspense>
         )
       case 'environment':
-      case 'history':
-      case 'settings':
         return (
-          <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '18px' }}>
-            <div style={{ marginBottom: '16px', fontSize: '48px' }}>
-              {activeTab === 'environment' && '🌍'}
-              {activeTab === 'history' && '⏱️'}
-              {activeTab === 'settings' && '⚙️'}
-            </div>
-            <h2 style={{ margin: '0 0 16px 0', color: 'var(--text-primary)' }}>
-              {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
-            </h2>
-            <p>Backend integration point.</p>
-          </div>
+          <React.Suspense fallback={<div style={{ padding: '24px' }}>Loading…</div>}>
+            <EnvironmentView />
+          </React.Suspense>
         )
       default:
         return (

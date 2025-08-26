@@ -30,7 +30,20 @@ const Logs = () => {
           method: 'POST',
           url: 'https://api.example.com/webhooks/payment',
           status: 200,
-          responseTime: '150ms'
+          responseTime: '150ms',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer sk_test_123456789',
+            'X-Request-ID': 'req_abc123def456'
+          },
+          body: {
+            event: 'payment.succeeded',
+            data: {
+              payment_id: 'pi_123456789',
+              amount: 2999,
+              currency: 'usd'
+            }
+          }
         }
       },
       {
@@ -43,7 +56,12 @@ const Logs = () => {
           method: 'POST',
           url: 'https://api.example.com/webhooks/payment',
           status: 500,
-          error: 'Internal server error'
+          error: 'Internal server error',
+          response: {
+            error: 'Internal server error',
+            message: 'Something went wrong on our end',
+            code: 'INTERNAL_ERROR'
+          }
         }
       },
       {
@@ -56,7 +74,12 @@ const Logs = () => {
           method: 'GET',
           url: 'https://api.example.com/webhooks/status',
           responseTime: '2500ms',
-          threshold: '2000ms'
+          threshold: '2000ms',
+          performance: {
+            database: '800ms',
+            external_api: '1200ms',
+            processing: '500ms'
+          }
         }
       },
       {
@@ -68,7 +91,12 @@ const Logs = () => {
         details: {
           environment: 'Production',
           variables: 5,
-          updatedBy: 'admin@example.com'
+          updatedBy: 'admin@example.com',
+          changes: [
+            { variable: 'API_KEY', action: 'updated' },
+            { variable: 'WEBHOOK_URL', action: 'added' },
+            { variable: 'DEBUG_MODE', action: 'removed' }
+          ]
         }
       },
       {
@@ -81,7 +109,69 @@ const Logs = () => {
           method: 'POST',
           url: 'https://api.example.com/webhooks/user',
           headers: 3,
-          bodySize: '1.2KB'
+          bodySize: '1.2KB',
+          validation: {
+            schema: 'user_webhook_v2',
+            required_fields: ['user_id', 'email', 'name'],
+            optional_fields: ['phone', 'address'],
+            validation_time: '15ms'
+          }
+        }
+      },
+      {
+        id: 6,
+        timestamp: new Date(Date.now() - 300000).toISOString(),
+        level: 'INFO',
+        webhookId: 'wh_444555666',
+        message: 'User registration webhook processed',
+        details: {
+          method: 'POST',
+          url: 'https://api.example.com/webhooks/users',
+          status: 201,
+          responseTime: '180ms',
+          user: {
+            id: 'usr_123456789',
+            email: 'john.doe@example.com',
+            name: 'John Doe',
+            created_at: '2025-08-25T11:20:00Z'
+          }
+        }
+      },
+      {
+        id: 7,
+        timestamp: new Date(Date.now() - 360000).toISOString(),
+        level: 'ERROR',
+        webhookId: 'wh_777888999',
+        message: 'Authentication failed',
+        details: {
+          method: 'POST',
+          url: 'https://api.example.com/webhooks/secure',
+          status: 401,
+          error: 'Invalid API key',
+          auth: {
+            provided_key: 'sk_test_****',
+            expected_format: 'sk_live_* or sk_test_*',
+            ip_address: '192.168.1.100'
+          }
+        }
+      },
+      {
+        id: 8,
+        timestamp: new Date(Date.now() - 420000).toISOString(),
+        level: 'INFO',
+        webhookId: 'wh_000111222',
+        message: 'Order status updated',
+        details: {
+          method: 'PUT',
+          url: 'https://api.example.com/webhooks/orders',
+          status: 200,
+          responseTime: '95ms',
+          order: {
+            id: 'ord_123456789',
+            status: 'shipped',
+            tracking_number: 'TRK123456789',
+            updated_at: '2025-08-25T11:15:00Z'
+          }
         }
       }
     ]
@@ -139,8 +229,14 @@ const Logs = () => {
   }
 
   return (
-    <div className="logs-container" style={{ padding: '24px' }}>
-      <div className="logs-header" style={{ marginBottom: '24px' }}>
+    <div className="logs-container" style={{ 
+      padding: '24px', 
+      height: '100vh', 
+      display: 'flex', 
+      flexDirection: 'column',
+      overflow: 'hidden'
+    }}>
+      <div className="logs-header" style={{ marginBottom: '24px', flexShrink: 0 }}>
         <h2 style={{ margin: '0 0 16px 0', color: 'var(--text-primary)' }}>
           📊 Application Logs
         </h2>
@@ -157,7 +253,8 @@ const Logs = () => {
         padding: '16px',
         background: 'var(--bg-secondary)',
         borderRadius: '8px',
-        border: '1px solid var(--border-color)'
+        border: '1px solid var(--border-color)',
+        flexShrink: 0
       }}>
         <div className="filter-group">
           <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -258,7 +355,10 @@ const Logs = () => {
         borderRadius: '8px',
         border: '1px solid var(--border-color)',
         overflow: 'hidden',
-        maxHeight: '600px'
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0
       }}>
         <div className="logs-table-header" style={{
           display: 'grid',
@@ -282,11 +382,12 @@ const Logs = () => {
         </div>
 
         <div className="logs-table-body" style={{ 
-          maxHeight: '500px', 
+          flex: 1,
           overflow: 'auto',
           scrollBehavior: 'smooth',
           scrollbarWidth: 'thin',
-          scrollbarColor: 'var(--border-color) var(--bg-secondary)'
+          scrollbarColor: 'var(--border-color) var(--bg-secondary)',
+          minHeight: 0
         }}>
           {currentLogs.length === 0 ? (
             <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -336,41 +437,49 @@ const Logs = () => {
                   {log.message}
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  <details>
-                    <summary style={{ cursor: 'pointer', color: 'var(--primary-color)' }}>
-                      View Details
+                  <details style={{ margin: 0 }}>
+                    <summary style={{ 
+                      cursor: 'pointer', 
+                      color: 'var(--primary-color)',
+                      fontSize: '11px',
+                      fontWeight: '500'
+                    }}>
+                      ▼ View Details
                     </summary>
                     <div style={{ 
                       marginTop: '8px',
                       position: 'relative'
                     }}>
                       <pre style={{ 
-                        padding: '12px', 
+                        padding: '8px', 
                         background: 'var(--bg-tertiary)', 
-                        borderRadius: '6px',
+                        borderRadius: '4px',
                         overflow: 'auto',
-                        fontSize: '11px',
-                        maxHeight: '200px',
+                        fontSize: '10px',
+                        maxHeight: '150px',
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word',
                         border: '1px solid var(--border-color)',
-                        position: 'relative'
+                        position: 'relative',
+                        margin: 0,
+                        lineHeight: '1.3'
                       }}>
                         {JSON.stringify(log.details, null, 2)}
                       </pre>
-                      {JSON.stringify(log.details, null, 2).length > 500 && (
+                      {JSON.stringify(log.details, null, 2).length > 300 && (
                         <div style={{
                           position: 'absolute',
-                          bottom: '8px',
-                          right: '8px',
+                          bottom: '4px',
+                          right: '4px',
                           background: 'var(--bg-secondary)',
                           color: 'var(--text-muted)',
-                          fontSize: '10px',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          border: '1px solid var(--border-color)'
+                          fontSize: '9px',
+                          padding: '1px 4px',
+                          borderRadius: '2px',
+                          border: '1px solid var(--border-color)',
+                          opacity: 0.8
                         }}>
-                          Scroll to see more
+                          Scroll
                         </div>
                       )}
                     </div>
@@ -389,7 +498,8 @@ const Logs = () => {
           justifyContent: 'center',
           alignItems: 'center',
           gap: '8px',
-          marginTop: '24px'
+          marginTop: '24px',
+          flexShrink: 0
         }}>
           <button
             onClick={() => handlePageChange(currentPage - 1)}
@@ -446,7 +556,8 @@ const Logs = () => {
         padding: '16px',
         background: 'var(--bg-secondary)',
         borderRadius: '8px',
-        border: '1px solid var(--border-color)'
+        border: '1px solid var(--border-color)',
+        flexShrink: 0
       }}>
         <h4 style={{ margin: '0 0 12px 0', color: 'var(--text-primary)' }}>Logs Summary</h4>
         <div style={{ display: 'flex', gap: '24px', fontSize: '14px' }}>

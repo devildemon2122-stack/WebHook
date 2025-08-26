@@ -5,9 +5,7 @@ export const NAVIGATION_TYPES = {
   REQUEST: 'request',
   COLLECTIONS: 'collections',
   ENVIRONMENT: 'environment',
-  LOGS: 'logs',
-  HISTORY: 'history',
-  SETTINGS: 'settings'
+  LOGS: 'logs'
 }
 
 // Navigation context interface
@@ -31,9 +29,7 @@ export const NavigationProvider = ({ children }) => {
     { id: NAVIGATION_TYPES.REQUEST, label: 'New Request', icon: '📝' },
     { id: NAVIGATION_TYPES.COLLECTIONS, label: 'Collections', icon: '📁' },
     { id: NAVIGATION_TYPES.ENVIRONMENT, label: 'Environment', icon: '🌍' },
-    { id: NAVIGATION_TYPES.LOGS, label: 'Logs', icon: '📊' },
-    { id: NAVIGATION_TYPES.HISTORY, label: 'History', icon: '⏱️' },
-    { id: NAVIGATION_TYPES.SETTINGS, label: 'Settings', icon: '⚙️' }
+    { id: NAVIGATION_TYPES.LOGS, label: 'Logs', icon: '📊' }
   ]
 
   // Set active tab
