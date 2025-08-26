@@ -1,355 +1,123 @@
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
+import { apiFetchLogs } from '../services/api'
 
 /**
  * Logs Component
- * 
- * Responsibilities:
- * - Display application logs
- * - Filter logs by level, date, webhook ID
- * - Show log details
- * - Handle log pagination
+ *
+ * Displays backend logs from GET /api/logs with server-side pagination.
+ * Columns are based on backend schema: method, url, status, responseTime, timestamp, details.
  */
 const Logs = () => {
   const [logs, setLogs] = useState([])
-  const [filterLevel, setFilterLevel] = useState('all')
-  const [filterDate, setFilterDate] = useState('')
-  const [filterWebhookId, setFilterWebhookId] = useState('')
-  const [currentPage, setCurrentPage] = useState(1)
-  const [logsPerPage] = useState(50)
+  const [page, setPage] = useState(1)
+  const [limit] = useState(20)
+  const [totalPages, setTotalPages] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  // Mock logs data - replace with actual backend integration
-  useEffect(() => {
-    const mockLogs = [
-      {
-        id: 1,
-        timestamp: new Date().toISOString(),
-        level: 'INFO',
-        webhookId: 'wh_123456789',
-        message: 'Webhook request sent successfully',
-        details: {
-          method: 'POST',
-          url: 'https://api.example.com/webhooks/payment',
-          status: 200,
-          responseTime: '150ms',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer sk_test_123456789',
-            'X-Request-ID': 'req_abc123def456'
-          },
-          body: {
-            event: 'payment.succeeded',
-            data: {
-              payment_id: 'pi_123456789',
-              amount: 2999,
-              currency: 'usd'
-            }
-          }
-        }
-      },
-      {
-        id: 2,
-        timestamp: new Date(Date.now() - 60000).toISOString(),
-        level: 'ERROR',
-        webhookId: 'wh_123456789',
-        message: 'Webhook request failed',
-        details: {
-          method: 'POST',
-          url: 'https://api.example.com/webhooks/payment',
-          status: 500,
-          error: 'Internal server error',
-          response: {
-            error: 'Internal server error',
-            message: 'Something went wrong on our end',
-            code: 'INTERNAL_ERROR'
-          }
-        }
-      },
-      {
-        id: 3,
-        timestamp: new Date(Date.now() - 120000).toISOString(),
-        level: 'WARN',
-        webhookId: 'wh_987654321',
-        message: 'Slow response time detected',
-        details: {
-          method: 'GET',
-          url: 'https://api.example.com/webhooks/status',
-          responseTime: '2500ms',
-          threshold: '2000ms',
-          performance: {
-            database: '800ms',
-            external_api: '1200ms',
-            processing: '500ms'
-          }
-        }
-      },
-      {
-        id: 4,
-        timestamp: new Date(Date.now() - 180000).toISOString(),
-        level: 'INFO',
-        webhookId: 'wh_555666777',
-        message: 'Environment configuration updated',
-        details: {
-          environment: 'Production',
-          variables: 5,
-          updatedBy: 'admin@example.com',
-          changes: [
-            { variable: 'API_KEY', action: 'updated' },
-            { variable: 'WEBHOOK_URL', action: 'added' },
-            { variable: 'DEBUG_MODE', action: 'removed' }
-          ]
-        }
-      },
-      {
-        id: 5,
-        timestamp: new Date(Date.now() - 240000).toISOString(),
-        level: 'DEBUG',
-        webhookId: 'wh_111222333',
-        message: 'Request validation passed',
-        details: {
-          method: 'POST',
-          url: 'https://api.example.com/webhooks/user',
-          headers: 3,
-          bodySize: '1.2KB',
-          validation: {
-            schema: 'user_webhook_v2',
-            required_fields: ['user_id', 'email', 'name'],
-            optional_fields: ['phone', 'address'],
-            validation_time: '15ms'
-          }
-        }
-      },
-      {
-        id: 6,
-        timestamp: new Date(Date.now() - 300000).toISOString(),
-        level: 'INFO',
-        webhookId: 'wh_444555666',
-        message: 'User registration webhook processed',
-        details: {
-          method: 'POST',
-          url: 'https://api.example.com/webhooks/users',
-          status: 201,
-          responseTime: '180ms',
-          user: {
-            id: 'usr_123456789',
-            email: 'john.doe@example.com',
-            name: 'John Doe',
-            created_at: '2025-08-25T11:20:00Z'
-          }
-        }
-      },
-      {
-        id: 7,
-        timestamp: new Date(Date.now() - 360000).toISOString(),
-        level: 'ERROR',
-        webhookId: 'wh_777888999',
-        message: 'Authentication failed',
-        details: {
-          method: 'POST',
-          url: 'https://api.example.com/webhooks/secure',
-          status: 401,
-          error: 'Invalid API key',
-          auth: {
-            provided_key: 'sk_test_****',
-            expected_format: 'sk_live_* or sk_test_*',
-            ip_address: '192.168.1.100'
-          }
-        }
-      },
-      {
-        id: 8,
-        timestamp: new Date(Date.now() - 420000).toISOString(),
-        level: 'INFO',
-        webhookId: 'wh_000111222',
-        message: 'Order status updated',
-        details: {
-          method: 'PUT',
-          url: 'https://api.example.com/webhooks/orders',
-          status: 200,
-          responseTime: '95ms',
-          order: {
-            id: 'ord_123456789',
-            status: 'shipped',
-            tracking_number: 'TRK123456789',
-            updated_at: '2025-08-25T11:15:00Z'
-          }
-        }
-      }
-    ]
-    setLogs(mockLogs)
-  }, [])
+  const loadLogs = async (pageNumber) => {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await apiFetchLogs({ page: pageNumber, limit })
+      // Handle both { success, data: { logs, pagination } } and direct { logs, pagination }
+      const payload = data?.data || data || {}
+      const fetchedLogs = payload.logs || []
+      const pagination = payload.pagination || {}
 
-  const getLevelColor = (level) => {
-    switch (level) {
-      case 'ERROR': return '#ef4444'
-      case 'WARN': return '#f59e0b'
-      case 'INFO': return '#3b82f6'
-      case 'DEBUG': return '#6b7280'
-      default: return '#6b7280'
-    }
-  }
-
-  const formatTimestamp = (timestamp) => {
-    return new Date(timestamp).toLocaleString()
-  }
-
-  const filteredLogs = logs.filter(log => {
-    if (filterLevel !== 'all' && log.level !== filterLevel) return false
-    if (filterDate && !log.timestamp.includes(filterDate)) return false
-    if (filterWebhookId && !log.webhookId.includes(filterWebhookId)) return false
-    return true
-  })
-
-  const indexOfLastLog = currentPage * logsPerPage
-  const indexOfFirstLog = indexOfLastLog - logsPerPage
-  const currentLogs = filteredLogs.slice(indexOfFirstLog, indexOfLastLog)
-  const totalPages = Math.ceil(filteredLogs.length / logsPerPage)
-
-  const handlePageChange = (pageNumber) => {
-    setCurrentPage(pageNumber)
-  }
-
-  const clearLogs = () => {
-    // Show confirmation dialog
-    if (window.confirm('Are you sure you want to clear all logs? This action cannot be undone.')) {
-      // TODO: Backend integration - clear logs
+      setLogs(Array.isArray(fetchedLogs) ? fetchedLogs : [])
+      const pages = pagination.totalPages || (pagination.total && limit ? Math.max(1, Math.ceil(pagination.total / limit)) : 1)
+      setTotalPages(pages)
+    } catch (e) {
+      setError(e?.message || 'Failed to load logs')
       setLogs([])
+      setTotalPages(1)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const exportLogs = () => {
-    // TODO: Backend integration - export logs
-    const logData = JSON.stringify(filteredLogs, null, 2)
-    const blob = new Blob([logData], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `webhooks-logs-${new Date().toISOString().split('T')[0]}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+  useEffect(() => {
+    loadLogs(page)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page])
+
+  const handlePageChange = (nextPage) => {
+    if (nextPage < 1 || nextPage > totalPages) return
+    setPage(nextPage)
+  }
+
+  const formatTimestamp = (iso) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return String(iso)
+    return d.toLocaleString()
+  }
+
+  const renderStatus = (status, statusText) => {
+    const code = Number(status)
+    const color = Number.isFinite(code)
+      ? (code >= 500 ? '#ef4444' : code >= 400 ? '#f59e0b' : code >= 200 ? '#22c55e' : '#6b7280')
+      : '#6b7280'
+    return (
+      <span style={{
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontSize: '12px',
+        fontWeight: 600,
+        color: 'white',
+        background: color,
+        display: 'inline-block'
+      }}>
+        {status}{statusText ? ` ${statusText}` : ''}
+      </span>
+    )
   }
 
   return (
-    <div className="logs-container" style={{ 
-      padding: '24px', 
-      height: '100vh', 
-      display: 'flex', 
+    <div className="logs-container" style={{
+      padding: '24px',
+      height: '100vh',
+      display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden'
     }}>
-      <div className="logs-header" style={{ marginBottom: '24px', flexShrink: 0 }}>
-        <h2 style={{ margin: '0 0 16px 0', color: 'var(--text-primary)' }}>
-          📊 Application Logs
-        </h2>
-        <p style={{ margin: '0', color: 'var(--text-muted)' }}>
-          Monitor webhook requests, responses, and system events
-        </p>
-      </div>
-
-      {/* Filters */}
-      <div className="logs-filters" style={{ 
-        display: 'flex', 
-        gap: '16px', 
-        marginBottom: '24px',
-        padding: '16px',
-        background: 'var(--bg-secondary)',
-        borderRadius: '8px',
-        border: '1px solid var(--border-color)',
-        flexShrink: 0
-      }}>
-        <div className="filter-group">
-          <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: 'var(--text-muted)' }}>
-            Log Level
-          </label>
-          <select
-            value={filterLevel}
-            onChange={(e) => setFilterLevel(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '4px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-primary)',
-              color: 'var(--text-primary)'
-            }}
-          >
-            <option value="all">All Levels</option>
-            <option value="ERROR">Error</option>
-            <option value="WARN">Warning</option>
-            <option value="INFO">Info</option>
-            <option value="DEBUG">Debug</option>
-          </select>
+      <div className="logs-header" style={{ marginBottom: '16px', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2 style={{ margin: '0 0 6px 0', color: 'var(--text-primary)' }}>📊 Application Logs</h2>
+          <p style={{ margin: 0, color: 'var(--text-muted)' }}>Fetched from backend on demand</p>
         </div>
-
-        <div className="filter-group">
-          <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: 'var(--text-muted)' }}>
-            Date
-          </label>
-          <input
-            type="date"
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '4px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-primary)',
-              color: 'var(--text-primary)'
-            }}
-          />
-        </div>
-
-        <div className="filter-group">
-          <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', color: 'var(--text-muted)' }}>
-            Webhook ID
-          </label>
-          <input
-            type="text"
-            placeholder="Filter by webhook ID"
-            value={filterWebhookId}
-            onChange={(e) => setFilterWebhookId(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '4px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-primary)',
-              color: 'var(--text-primary)',
-              minWidth: '200px'
-            }}
-          />
-        </div>
-
-        <div className="filter-actions" style={{ display: 'flex', gap: '8px', alignItems: 'end' }}>
+        <div>
           <button
-            className="btn btn-secondary"
-            onClick={clearLogs}
+            onClick={() => loadLogs(page)}
+            disabled={loading}
             style={{
               padding: '8px 16px',
               borderRadius: '4px',
               border: '1px solid var(--border-color)',
               background: 'var(--bg-primary)',
               color: 'var(--text-primary)',
-              cursor: 'pointer'
+              cursor: loading ? 'not-allowed' : 'pointer'
             }}
           >
-            Clear Logs
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={exportLogs}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '4px',
-              border: 'none',
-              background: 'var(--primary-color)',
-              color: 'white',
-              cursor: 'pointer'
-            }}
-          >
-            Export
+            {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
       </div>
 
-      {/* Logs Table */}
+      {error && (
+        <div style={{
+          marginBottom: '16px',
+          padding: '12px',
+          borderRadius: '6px',
+          border: '1px solid var(--border-color)',
+          background: 'var(--bg-secondary)',
+          color: 'var(--text-primary)'
+        }}>
+          {error}
+        </div>
+      )}
+
       <div className="logs-table" style={{
         background: 'var(--bg-primary)',
         borderRadius: '8px',
@@ -362,26 +130,27 @@ const Logs = () => {
       }}>
         <div className="logs-table-header" style={{
           display: 'grid',
-          gridTemplateColumns: '80px 1fr 120px 200px 1fr',
+          gridTemplateColumns: '100px 1fr 160px 140px 180px 1fr',
           gap: '16px',
           padding: '16px',
           background: 'var(--bg-secondary)',
           borderBottom: '1px solid var(--border-color)',
-          fontWeight: '600',
+          fontWeight: 600,
           fontSize: '14px',
           color: 'var(--text-primary)',
           position: 'sticky',
           top: 0,
           zIndex: 10
         }}>
-          <div>Level</div>
+          <div>Method</div>
+          <div>URL</div>
+          <div>Status</div>
+          <div>Response Time</div>
           <div>Timestamp</div>
-          <div>Webhook ID</div>
-          <div>Message</div>
           <div>Details</div>
         </div>
 
-        <div className="logs-table-body" style={{ 
+        <div className="logs-table-body" style={{
           flex: 1,
           overflow: 'auto',
           scrollBehavior: 'smooth',
@@ -389,99 +158,72 @@ const Logs = () => {
           scrollbarColor: 'var(--border-color) var(--bg-secondary)',
           minHeight: 0
         }}>
-          {currentLogs.length === 0 ? (
+          {loading ? (
             <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
-              No logs found matching the current filters
+              Loading…
+            </div>
+          ) : logs.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              No logs found
             </div>
           ) : (
-            currentLogs.map((log) => (
+            logs.map((log) => (
               <div
                 key={log.id}
                 className="log-row"
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '80px 1fr 120px 200px 1fr',
+                  gridTemplateColumns: '100px 1fr 160px 140px 180px 1fr',
                   gap: '16px',
                   padding: '16px',
                   borderBottom: '1px solid var(--border-color)',
-                  transition: 'background-color 0.2s ease',
                   minHeight: '60px',
                   alignItems: 'start'
                 }}
-                onMouseEnter={(e) => {
-                  e.target.parentElement.style.background = 'var(--bg-secondary)'
-                }}
-                onMouseLeave={(e) => {
-                  e.target.parentElement.style.background = 'var(--bg-primary)'
-                }}
               >
-                <div>
-                  <span style={{
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    color: 'white',
-                    background: getLevelColor(log.level)
-                  }}>
-                    {log.level}
-                  </span>
-                </div>
-                <div style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
-                  {formatTimestamp(log.timestamp)}
-                </div>
-                <div style={{ fontSize: '14px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                  {log.webhookId}
-                </div>
-                <div style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
-                  {log.message}
-                </div>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>{log.method}</div>
+                <div style={{ fontSize: '13px', color: 'var(--text-primary)', wordBreak: 'break-all' }}>{log.url}</div>
+                <div>{renderStatus(log.status, log.statusText)}</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{typeof log.responseTime === 'number' ? `${log.responseTime} ms` : String(log.responseTime || '')}</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{formatTimestamp(log.timestamp)}</div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                   <details style={{ margin: 0 }}>
-                    <summary style={{ 
-                      cursor: 'pointer', 
-                      color: 'var(--primary-color)',
-                      fontSize: '11px',
-                      fontWeight: '500'
-                    }}>
+                    <summary style={{ cursor: 'pointer', color: 'var(--primary-color)', fontSize: '11px', fontWeight: 500 }}>
                       ▼ View Details
                     </summary>
-                    <div style={{ 
-                      marginTop: '8px',
-                      position: 'relative'
-                    }}>
-                      <pre style={{ 
-                        padding: '8px', 
-                        background: 'var(--bg-tertiary)', 
-                        borderRadius: '4px',
-                        overflow: 'auto',
-                        fontSize: '10px',
-                        maxHeight: '150px',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        border: '1px solid var(--border-color)',
-                        position: 'relative',
-                        margin: 0,
-                        lineHeight: '1.3'
-                      }}>
-                        {JSON.stringify(log.details, null, 2)}
-                      </pre>
-                      {JSON.stringify(log.details, null, 2).length > 300 && (
-                        <div style={{
-                          position: 'absolute',
-                          bottom: '4px',
-                          right: '4px',
-                          background: 'var(--bg-secondary)',
-                          color: 'var(--text-muted)',
-                          fontSize: '9px',
-                          padding: '1px 4px',
-                          borderRadius: '2px',
+                    <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>Request</div>
+                        <pre style={{
+                          padding: '8px',
+                          background: 'var(--bg-tertiary)',
+                          borderRadius: '4px',
+                          overflow: 'auto',
+                          fontSize: '10px',
+                          maxHeight: '160px',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
                           border: '1px solid var(--border-color)',
-                          opacity: 0.8
-                        }}>
-                          Scroll
-                        </div>
-                      )}
+                          margin: 0,
+                          lineHeight: '1.3'
+                        }}>{JSON.stringify({ headers: log?.request?.headers || {}, body: log?.request?.body ?? null }, null, 2)}</pre>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>Response</div>
+                        <pre style={{
+                          padding: '8px',
+                          background: 'var(--bg-tertiary)',
+                          borderRadius: '4px',
+                          overflow: 'auto',
+                          fontSize: '10px',
+                          maxHeight: '160px',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          border: '1px solid var(--border-color)',
+                          margin: 0,
+                          lineHeight: '1.3'
+                        }}>{JSON.stringify({ headers: log?.response?.headers || {}, body: log?.response?.body ?? null }, null, 2)}</pre>
+                      </div>
                     </div>
                   </details>
                 </div>
@@ -491,58 +233,58 @@ const Logs = () => {
         </div>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="logs-pagination" style={{
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
           gap: '8px',
-          marginTop: '24px',
+          marginTop: '16px',
           flexShrink: 0
         }}>
           <button
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage === 1}
+            onClick={() => handlePageChange(page - 1)}
+            disabled={page === 1 || loading}
             style={{
               padding: '8px 12px',
               borderRadius: '4px',
               border: '1px solid var(--border-color)',
-              background: currentPage === 1 ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
-              color: currentPage === 1 ? 'var(--text-muted)' : 'var(--text-primary)',
-              cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+              background: page === 1 || loading ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
+              color: page === 1 || loading ? 'var(--text-muted)' : 'var(--text-primary)',
+              cursor: page === 1 || loading ? 'not-allowed' : 'pointer'
             }}
           >
             Previous
           </button>
-          
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+
+          {Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, page - 3), Math.max(0, page - 3) + 5).map((p) => (
             <button
-              key={page}
-              onClick={() => handlePageChange(page)}
+              key={p}
+              onClick={() => handlePageChange(p)}
+              disabled={loading}
               style={{
                 padding: '8px 12px',
                 borderRadius: '4px',
                 border: '1px solid var(--border-color)',
-                background: currentPage === page ? 'var(--primary-color)' : 'var(--bg-primary)',
-                color: currentPage === page ? 'white' : 'var(--text-primary)',
-                cursor: 'pointer'
+                background: page === p ? 'var(--primary-color)' : 'var(--bg-primary)',
+                color: page === p ? 'white' : 'var(--text-primary)',
+                cursor: loading ? 'not-allowed' : 'pointer'
               }}
             >
-              {page}
+              {p}
             </button>
           ))}
-          
+
           <button
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages}
+            onClick={() => handlePageChange(page + 1)}
+            disabled={page === totalPages || loading}
             style={{
               padding: '8px 12px',
               borderRadius: '4px',
               border: '1px solid var(--border-color)',
-              background: currentPage === totalPages ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
-              color: currentPage === totalPages ? 'var(--text-muted)' : 'var(--text-primary)',
-              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+              background: page === totalPages || loading ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
+              color: page === totalPages || loading ? 'var(--text-muted)' : 'var(--text-primary)',
+              cursor: page === totalPages || loading ? 'not-allowed' : 'pointer'
             }}
           >
             Next
@@ -550,27 +292,19 @@ const Logs = () => {
         </div>
       )}
 
-      {/* Logs Summary */}
       <div className="logs-summary" style={{
-        marginTop: '24px',
-        padding: '16px',
+        marginTop: '16px',
+        padding: '12px',
         background: 'var(--bg-secondary)',
         borderRadius: '8px',
         border: '1px solid var(--border-color)',
-        flexShrink: 0
+        flexShrink: 0,
+        display: 'flex',
+        gap: '24px',
+        fontSize: '14px'
       }}>
-        <h4 style={{ margin: '0 0 12px 0', color: 'var(--text-primary)' }}>Logs Summary</h4>
-        <div style={{ display: 'flex', gap: '24px', fontSize: '14px' }}>
-          <div>
-            <strong>Total Logs:</strong> {filteredLogs.length}
-          </div>
-          <div>
-            <strong>Current Page:</strong> {currentPage} of {totalPages}
-          </div>
-          <div>
-            <strong>Logs per Page:</strong> {logsPerPage}
-          </div>
-        </div>
+        <div><strong>Current Page:</strong> {page} of {totalPages}</div>
+        <div><strong>Logs per Page:</strong> {limit}</div>
       </div>
     </div>
   )
