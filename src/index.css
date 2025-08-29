@@ -496,7 +496,11 @@ body {
 
 /* Custom Scrollbar Styles */
 .environment-dropdown::-webkit-scrollbar {
-  width: 8px;
+  width: 14px;
+  height: 13px;
+  scroll-padding: 12px;
+
+
 }
 
 .environment-dropdown::-webkit-scrollbar-track {
