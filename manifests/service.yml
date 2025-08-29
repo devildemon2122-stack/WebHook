@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Service
+metadata:
+  name: rt-webhook-ui
+  namespace: dev-9x-rt
+spec:
+  type: NodePort
+  selector:
+    app: rt-webhook-ui
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30110   # you can choose any free port in 30000-32767, or remove this line for auto-assignment
