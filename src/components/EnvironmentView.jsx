@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
+import { useEnvironment } from '../contexts/EnvironmentContext'
 
 /**
  * EnvironmentView Component
@@ -10,8 +11,18 @@ import React, { useState, useEffect } from 'react'
  * - Provide environment switching
  */
 const EnvironmentView = () => {
-  const [environments, setEnvironments] = useState([])
-  const [currentEnvironment, setCurrentEnvironment] = useState(null)
+  const { 
+    environments, 
+    currentEnvironment, 
+    setCurrentEnvironment,
+    createEnvironment,
+    deleteEnvironment,
+    addVariable,
+    updateVariable,
+    removeVariable,
+    toggleVariable
+  } = useEnvironment()
+  
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [newEnvironment, setNewEnvironment] = useState({
     name: '',
@@ -19,189 +30,32 @@ const EnvironmentView = () => {
     variables: []
   })
 
-  // Helper: ensure reserved variables exist on an environment
-  const ensureReservedVariables = (env) => {
-    const existingKeys = (env.variables || []).map(v => v.key)
-    const updatedVariables = [...(env.variables || [])]
-    let changed = false
-
-    if (!existingKeys.includes('ENV_CODE')) {
-      updatedVariables.unshift({ key: 'ENV_CODE', value: 'dev', type: 'default', enabled: true })
-      changed = true
-    }
-    if (!existingKeys.includes('base_URL')) {
-      updatedVariables.unshift({ key: 'base_URL', value: '', type: 'default', enabled: true })
-      changed = true
-    }
-
-    return changed ? { ...env, variables: updatedVariables, updatedAt: new Date().toISOString() } : env
-  }
-
-  // Load environments from localStorage on component mount
-  useEffect(() => {
-    const loadFromStorage = () => {
-      // Try multiple keys for backward compatibility
-      const keys = ['webhook_environments', 'webhooks-environments', 'webhook-pro-environments']
-      let raw = null
-      let usedKey = null
-      for (const key of keys) {
-        const v = localStorage.getItem(key)
-        if (v) { raw = v; usedKey = key; break }
-      }
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        const migrated = parsed.map(ensureReservedVariables)
-        setEnvironments(migrated)
-        if (migrated.length > 0) {
-          setCurrentEnvironment(migrated[0])
-        }
-        // Persist under canonical key if key changed or migration happened
-        if (usedKey !== 'webhook_environments' || JSON.stringify(parsed) !== JSON.stringify(migrated)) {
-          localStorage.setItem('webhook_environments', JSON.stringify(migrated))
-        }
-      }
-    }
-
-    loadFromStorage()
-
-    const onStorage = (e) => {
-      if (['webhook_environments', 'webhooks-environments', 'webhook-pro-environments'].includes(e.key)) {
-        loadFromStorage()
-      }
-    }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
-
-  // Save environments to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('webhook_environments', JSON.stringify(environments))
-  }, [environments])
-
-  // Keep currentEnvironment in sync with environments state so edits render immediately
-  useEffect(() => {
-    if (!environments || environments.length === 0) return
-    if (!currentEnvironment) {
-      setCurrentEnvironment(environments[0])
-      return
-    }
-
-    const updated = environments.find(env => env.id === currentEnvironment.id)
-    if (updated && updated !== currentEnvironment) {
-      setCurrentEnvironment(updated)
-    } else if (!updated) {
-      // Fallback if the current environment was removed
-      setCurrentEnvironment(environments[0])
-    }
-  }, [environments])
-
   const handleCreateEnvironment = () => {
     if (newEnvironment.name.trim()) {
-      const environment = {
-        id: Date.now().toString(),
-        name: newEnvironment.name.trim(),
-        description: newEnvironment.description.trim(),
-        variables: [
-          { key: 'base_URL', value: '', type: 'default', enabled: true },
-          { key: 'ENV_CODE', value: 'dev', type: 'default', enabled: true },
-          ...newEnvironment.variables
-        ],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
-      
-      setEnvironments(prev => [...prev, environment])
-      setCurrentEnvironment(environment)
+      createEnvironment(newEnvironment.name, newEnvironment.description, newEnvironment.variables)
       setNewEnvironment({ name: '', description: '', variables: [] })
       setShowCreateDialog(false)
     }
   }
 
   const handleDeleteEnvironment = (environmentId) => {
-    setEnvironments(prev => prev.filter(env => env.id !== environmentId))
-    if (currentEnvironment?.id === environmentId) {
-      setCurrentEnvironment(environments.length > 1 ? environments.find(env => env.id !== environmentId) : null)
-    }
+    deleteEnvironment(environmentId)
   }
 
-  const addVariable = (environmentId) => {
-    setEnvironments(prev => prev.map(env => {
-      if (env.id === environmentId) {
-        return {
-          ...env,
-          variables: [...env.variables, { 
-            key: '', 
-            value: '', 
-            type: 'default', // 'default' or 'secret'
-            enabled: true 
-          }],
-          updatedAt: new Date().toISOString()
-        }
-      }
-      return env
-    }))
+  const addVariableToCurrent = (environmentId) => {
+    addVariable(environmentId)
   }
 
-  const updateVariable = (environmentId, variableIndex, field, value) => {
-    setEnvironments(prev => prev.map(env => {
-      if (env.id === environmentId) {
-        const updatedVariables = [...env.variables]
-        const targetVar = updatedVariables[variableIndex]
-        const isReserved = targetVar.key === 'ENV_CODE' || targetVar.key === 'base_URL'
-        updatedVariables[variableIndex] = {
-          ...updatedVariables[variableIndex],
-          // prevent renaming reserved keys
-          ...(field === 'key' && isReserved ? {} : { [field]: value })
-        }
-        // force reserved type to default
-        if (isReserved) {
-          updatedVariables[variableIndex].type = 'default'
-        }
-        return {
-          ...env,
-          variables: updatedVariables,
-          updatedAt: new Date().toISOString()
-        }
-      }
-      return env
-    }))
+  const updateVariableInCurrent = (environmentId, variableIndex, field, value) => {
+    updateVariable(environmentId, variableIndex, field, value)
   }
 
-  const removeVariable = (environmentId, variableIndex) => {
-    setEnvironments(prev => prev.map(env => {
-      if (env.id === environmentId) {
-        const targetVar = env.variables[variableIndex]
-        const isReserved = targetVar?.key === 'ENV_CODE' || targetVar?.key === 'base_URL'
-        if (isReserved) {
-          return env
-        }
-        const updatedVariables = env.variables.filter((_, index) => index !== variableIndex)
-        return {
-          ...env,
-          variables: updatedVariables,
-          updatedAt: new Date().toISOString()
-        }
-      }
-      return env
-    }))
+  const removeVariableFromCurrent = (environmentId, variableIndex) => {
+    removeVariable(environmentId, variableIndex)
   }
 
-  const toggleVariable = (environmentId, variableIndex) => {
-    setEnvironments(prev => prev.map(env => {
-      if (env.id === environmentId) {
-        const updatedVariables = [...env.variables]
-        updatedVariables[variableIndex] = {
-          ...updatedVariables[variableIndex],
-          enabled: !updatedVariables[variableIndex].enabled
-        }
-        return {
-          ...env,
-          variables: updatedVariables,
-          updatedAt: new Date().toISOString()
-        }
-      }
-      return env
-    }))
+  const toggleVariableInCurrent = (environmentId, variableIndex) => {
+    toggleVariable(environmentId, variableIndex)
   }
 
   return (
@@ -451,7 +305,7 @@ const EnvironmentView = () => {
                   </div>
                   <button
                     className="btn btn-secondary"
-                    onClick={() => addVariable(currentEnvironment.id)}
+                    onClick={() => addVariableToCurrent(currentEnvironment.id)}
                     style={{
                       padding: '8px 16px',
                       fontSize: '13px'
@@ -495,7 +349,7 @@ const EnvironmentView = () => {
                     </p>
                     <button
                       className="btn btn-secondary"
-                      onClick={() => addVariable(currentEnvironment.id)}
+                      onClick={() => addVariableToCurrent(currentEnvironment.id)}
                       style={{
                         padding: '8px 16px',
                         fontSize: '13px'
@@ -548,7 +402,7 @@ const EnvironmentView = () => {
                         >
                           {/* Active Toggle */}
                           <button
-                            onClick={() => toggleVariable(currentEnvironment.id, index)}
+                            onClick={() => toggleVariableInCurrent(currentEnvironment.id, index)}
                             style={{
                               width: '40px',
                               height: '20px',
@@ -578,15 +432,17 @@ const EnvironmentView = () => {
                             type="text"
                             placeholder="Variable name"
                             value={variable.key}
-                            onChange={(e) => updateVariable(currentEnvironment.id, index, 'key', e.target.value)}
+                            onChange={(e) => updateVariableInCurrent(currentEnvironment.id, index, 'key', e.target.value)}
                             style={{
                               padding: '8px 12px',
                               border: '1px solid var(--border-color)',
                               borderRadius: '4px',
-                              background: 'var(--bg-primary)',
-                              color: 'var(--text-primary)',
+                              background: variable.key === 'ENV_CODE' || variable.key === 'base_URL' ? 'var(--bg-tertiary)' : 'var(--bg-primary)',
+                              color: variable.key === 'ENV_CODE' || variable.key === 'base_URL' ? 'var(--text-muted)' : 'var(--text-primary)',
                               fontSize: '13px',
-                              outline: 'none'
+                              outline: 'none',
+                              width: '100%',
+                              boxSizing: 'border-box'
                             }}
                             disabled={variable.key === 'ENV_CODE' || variable.key === 'base_URL'}
                           />
@@ -595,7 +451,7 @@ const EnvironmentView = () => {
                           {variable.key === 'ENV_CODE' ? (
                             <select
                               value={variable.value}
-                              onChange={(e) => updateVariable(currentEnvironment.id, index, 'value', e.target.value)}
+                              onChange={(e) => updateVariableInCurrent(currentEnvironment.id, index, 'value', e.target.value)}
                               style={{
                                 padding: '8px 12px',
                                 border: '1px solid var(--border-color)',
@@ -616,7 +472,7 @@ const EnvironmentView = () => {
                               type={variable.type === 'secret' ? 'password' : 'text'}
                               placeholder="Variable value"
                               value={variable.value}
-                              onChange={(e) => updateVariable(currentEnvironment.id, index, 'value', e.target.value)}
+                              onChange={(e) => updateVariableInCurrent(currentEnvironment.id, index, 'value', e.target.value)}
                               style={{
                                 padding: '8px 12px',
                                 border: '1px solid var(--border-color)',
@@ -624,7 +480,9 @@ const EnvironmentView = () => {
                                 background: 'var(--bg-primary)',
                                 color: 'var(--text-primary)',
                                 fontSize: '13px',
-                                outline: 'none'
+                                outline: 'none',
+                                width: '100%',
+                                boxSizing: 'border-box'
                               }}
                             />
                           )}
@@ -632,7 +490,7 @@ const EnvironmentView = () => {
                           {/* Variable Type Dropdown */}
                           <select
                             value={variable.type}
-                            onChange={(e) => updateVariable(currentEnvironment.id, index, 'type', e.target.value)}
+                            onChange={(e) => updateVariableInCurrent(currentEnvironment.id, index, 'type', e.target.value)}
                             style={{
                               padding: '8px 12px',
                               border: '1px solid var(--border-color)',
@@ -652,7 +510,7 @@ const EnvironmentView = () => {
                           {/* Actions */}
                           {!(variable.key === 'ENV_CODE' || variable.key === 'base_URL') && (
                             <button
-                              onClick={() => removeVariable(currentEnvironment.id, index)}
+                              onClick={() => removeVariableFromCurrent(currentEnvironment.id, index)}
                               style={{
                                 background: 'var(--danger-color)',
                                 color: 'white',

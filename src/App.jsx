@@ -2,6 +2,7 @@ import React from 'react'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { WebhookProvider } from './contexts/WebhookContext'
 import { NavigationProvider } from './contexts/NavigationContext'
+import { EnvironmentProvider } from './contexts/EnvironmentContext'
 import AppLayout from './components/AppLayout'
 
 /**
@@ -17,7 +18,9 @@ function App() {
     <ThemeProvider>
       <NavigationProvider>
         <WebhookProvider>
-          <AppLayout />
+          <EnvironmentProvider>
+            <AppLayout />
+          </EnvironmentProvider>
         </WebhookProvider>
       </NavigationProvider>
     </ThemeProvider>

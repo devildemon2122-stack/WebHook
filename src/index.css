@@ -208,6 +208,7 @@ body {
   gap: 20px;
   overflow-y: auto;
   min-height: 0;
+  height: auto;
 }
 
 .request-section {
@@ -352,7 +353,7 @@ body {
   transition: background-color 0.3s ease, border-color 0.3s ease;
   display: flex;
   flex-direction: column;
-  max-height: 50vh;
+  max-height: 30vh;
   min-height: 200px;
 }
 
@@ -491,6 +492,77 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* Custom Scrollbar Styles */
+.environment-dropdown::-webkit-scrollbar {
+  width: 8px;
+}
+
+.environment-dropdown::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+  border-radius: 4px;
+}
+
+.environment-dropdown::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.environment-dropdown::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* General scrollbar improvements */
+.form-input::-webkit-scrollbar {
+  width: 8px;
+}
+
+.form-input::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+  border-radius: 4px;
+}
+
+.form-input::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.form-input::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* Environment dropdown specific styles */
+.environment-dropdown {
+  backdrop-filter: blur(15px);
+  border: 1px solid var(--border-color) !important;
+  animation: dropdownFadeIn 0.2s ease-out;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.environment-item {
+  border-radius: 0 !important;
+  transition: all 0.2s ease !important;
+}
+
+.environment-item:last-child {
+  border-bottom-left-radius: 12px !important;
+  border-bottom-right-radius: 12px !important;
+}
+
+.environment-item:hover {
+  background: var(--bg-tertiary) !important;
+  transform: translateX(2px);
 }
 
 /* Responsive */

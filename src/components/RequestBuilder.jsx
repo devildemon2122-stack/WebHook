@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useWebhook } from '../contexts/WebhookContext'
 import { useNavigation } from '../contexts/NavigationContext'
+import { useEnvironment } from '../contexts/EnvironmentContext'
 import { 
   HTTP_METHODS, 
   REQUEST_TAB_TYPES, 
@@ -8,6 +9,15 @@ import {
   PARAMETER_TYPES,
   DEFAULT_PARAM_NAMES
 } from '../utils/constants'
+import { buildNewFormatPayload } from '../utils/payloads'
+import { 
+  parsePathParameters, 
+  parseQueryParameters, 
+  buildUrl, 
+  isValidUrl 
+} from '../utils/urlParser'
+
+
 
 /**
  * RequestBuilder Component
@@ -24,6 +34,7 @@ import {
  */
 const RequestBuilder = () => {
   const { setActiveTab } = useNavigation()
+  const { environments, currentEnvironment, setCurrentEnvironment, createEnvironment } = useEnvironment()
   const [activeRequestTab, setActiveRequestTab] = useState(REQUEST_TAB_TYPES.BODY)
   const [showEnvironment, setShowEnvironment] = useState(false)
   const [showEnvironmentConfig, setShowEnvironmentConfig] = useState(false)
@@ -40,10 +51,6 @@ const RequestBuilder = () => {
     role: 'client', // client, admin, author
     variables: []
   })
-  
-  // Environment state
-  const [environments, setEnvironments] = useState([])
-  const [currentEnvironment, setCurrentEnvironment] = useState(null)
   
   // Authentication state
   const [authType, setAuthType] = useState('no-auth')
@@ -92,7 +99,8 @@ const RequestBuilder = () => {
   }, [])
 
   // Smart path parameter parsing (Postman-style)
-  const parsePathParameters = useCallback((url) => {
+  // DEPRECATED: Old complex path parameter parsing - now using utility functions
+  const parsePathParametersFromUrl = useCallback((url) => {
     if (!url) return []
 
     try {
@@ -167,36 +175,26 @@ const RequestBuilder = () => {
     }
   }, [pathParams])
 
-  // Debounced parse for URL changes so Params update reliably while typing
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      try {
-        const url = requestData.url
-        if (!url) return
-        const urlObj = new URL(url, "https://api.example.com")
-        // build query params fresh
-        const detected = []
-        urlObj.searchParams.forEach((value, key) => {
-          detected.push({ key, value, type: 'query', required: false })
-        })
-        
-        // Only update query params if we have detected parameters and no existing manual parameters
-        // This prevents overriding manually added parameters
-        if (detected.length > 0 && queryParams.length === 0) {
-          setQueryParams(detected)
-          // also refresh combined params for requestData
-          updateRequestData({ params: [...(pathParams || []), ...detected] })
-        } else if (detected.length === 0 && queryParams.length > 0) {
-          // Clear query params if URL has no query parameters and we have some
-          setQueryParams([])
-          updateRequestData({ params: [...(pathParams || [])] })
+  // New simplified path parameter parsing using utility
+  const parsePathParametersFromUrlNew = useCallback((url) => {
+    // Use the new URL parser utility
+    const newParams = parsePathParameters(url)
+    
+    // Preserve existing values for template parameters
+    return newParams.map(param => {
+      const existingParam = pathParams.find(p => p.key === param.key)
+      if (existingParam) {
+        return {
+          ...param,
+          value: existingParam.value,
+          enabled: existingParam.enabled
         }
-      } catch (_) {
-        // ignore during typing
       }
-    }, 300)
-    return () => clearTimeout(handle)
-  }, [requestData.url])
+      return param
+    })
+  }, [pathParams])
+
+  // URL parsing is now handled in handleUrlChange for better responsiveness
 
   // Update URL when parameters change
   useEffect(() => {
@@ -204,42 +202,8 @@ const RequestBuilder = () => {
       if (!requestData.url) return
       
       try {
-        let newUrl = requestData.url
-        
-        // Update path parameters
-        if (pathParams.length > 0) {
-          pathParams.forEach(param => {
-            if (param.enabled && param.value) {
-              if (param.isTemplate) {
-                const placeholder = `{${param.key}}`
-                if (newUrl.includes(placeholder)) {
-                  newUrl = newUrl.replace(placeholder, param.value)
-                }
-              } else if (typeof param.segmentIndex === 'number') {
-                const segs = newUrl.split('/')
-                const idx = param.segmentIndex + 1
-                if (segs[idx] && segs[idx] !== param.value) {
-                  segs[idx] = param.value
-                  newUrl = segs.join('/')
-                }
-              }
-            }
-          })
-        }
-        
-        // Update query parameters
-        if (queryParams.length > 0) {
-          const urlObj = new URL(newUrl, "https://api.example.com")
-          // Clear existing query parameters
-          urlObj.search = ''
-          // Add all query parameters
-          queryParams.forEach(param => {
-            if (param.key?.trim()) {
-              urlObj.searchParams.set(param.key, param.value ?? '')
-            }
-          })
-          newUrl = urlObj.toString()
-        }
+        // Use the new URL builder utility
+        const newUrl = buildUrl(requestData.url, pathParams, queryParams)
         
         if (newUrl !== requestData.url) {
           updateRequestData({ url: newUrl })
@@ -253,26 +217,7 @@ const RequestBuilder = () => {
     updateUrlFromParams()
   }, [pathParams, queryParams])
 
-  // Parse path parameters when URL changes
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      try {
-        const url = requestData.url
-        if (!url) return
-        
-        const newPathParams = parsePathParameters(url)
-        if (newPathParams.length > 0) {
-          setPathParams(newPathParams)
-        } else if (pathParams.length > 0) {
-          // Clear path params if URL has no path parameters
-          setPathParams([])
-        }
-      } catch (_) {
-        // ignore during typing
-      }
-    }, 300)
-    return () => clearTimeout(handle)
-  }, [requestData.url, parsePathParameters])
+  // Path parameter parsing is now handled in handleUrlChange for better responsiveness
 
   // Load environments from localStorage
   useEffect(() => {
@@ -282,7 +227,7 @@ const RequestBuilder = () => {
         const parsed = JSON.parse(savedEnvironments)
         // migrate to include reserved variables
         const migrated = parsed.map(ensureReservedVariables)
-        setEnvironments(migrated)
+        // setEnvironments(migrated) // This is now handled by EnvironmentContext
         
         // Update current environment if it still exists
         if (currentEnvironment) {
@@ -323,6 +268,20 @@ const RequestBuilder = () => {
     window.addEventListener('storage', handleStorageChange)
     return () => window.removeEventListener('storage', handleStorageChange)
   }, [ensureReservedVariables])
+
+  // Close environment dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showEnvironment && !event.target.closest('.environment-dropdown') && !event.target.closest('button')) {
+        setShowEnvironment(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showEnvironment])
 
   // Update headers when auth changes
   useEffect(() => {
@@ -379,7 +338,46 @@ const RequestBuilder = () => {
   }
 
   const handleUrlChange = (url) => {
-    updateRequestData({ url })
+    // Clean the URL by removing leading @ and other common formatting issues
+    let cleanUrl = url.trim()
+    if (cleanUrl.startsWith('@')) {
+      cleanUrl = cleanUrl.substring(1)
+    }
+    
+    // Basic URL validation - add https:// if missing
+    if (cleanUrl && !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://') && cleanUrl.includes('.')) {
+      cleanUrl = 'https://' + cleanUrl
+    }
+
+    // Update the URL immediately for better responsiveness
+    updateRequestData({ url: cleanUrl })
+    
+    // Parse parameters with a shorter delay for better UX
+    setTimeout(() => {
+      try {
+        if (cleanUrl && isValidUrl(cleanUrl)) {
+          // Parse path parameters
+          const newPathParams = parsePathParametersFromUrlNew(cleanUrl)
+          if (newPathParams.length > 0) {
+            setPathParams(newPathParams)
+          } else if (pathParams.length > 0) {
+            setPathParams([])
+          }
+          
+          // Parse query parameters
+          const detected = parseQueryParameters(cleanUrl)
+          if (detected.length > 0 && queryParams.length === 0) {
+            setQueryParams(detected)
+            updateRequestData({ params: [...(pathParams || []), ...detected] })
+          } else if (detected.length === 0 && queryParams.length > 0) {
+            setQueryParams([])
+            updateRequestData({ params: [...(pathParams || [])] })
+          }
+        }
+      } catch (error) {
+        // Ignore parsing errors during typing
+      }
+    }, 100) // Reduced from 300ms to 100ms for better responsiveness
   }
 
   const handleBodyChange = (body) => {
@@ -468,8 +466,15 @@ const RequestBuilder = () => {
   const handleSaveRequest = async () => {
     if (!saveName.trim()) return
 
-    // Try backend save first
-    const apiResult = await saveRequestToBackend(saveName.trim(), saveDescription.trim())
+    // Try backend save first with new format
+    const apiResult = await saveRequestToBackend(
+      saveName.trim(), 
+      saveDescription.trim(),
+      currentEnvironment,
+      environments,
+      authType,
+      authConfig
+    )
     if (apiResult?.success) {
       setSaveName('')
       setSaveDescription('')
@@ -549,12 +554,11 @@ const RequestBuilder = () => {
 
   const handleEnvironmentSave = () => {
     if (environmentConfig.name.trim() && environmentConfig.baseUrl.trim()) {
-      // Construct environment object compatible with EnvironmentView
-      const env = ensureReservedVariables({
-        id: Date.now().toString(),
-        name: environmentConfig.name.trim(),
-        description: '',
-        variables: [
+      // Create environment with proper structure using EnvironmentContext
+      createEnvironment(
+        environmentConfig.name.trim(),
+        environmentConfig.description || '',
+        [
           { key: 'base_URL', value: environmentConfig.baseUrl.trim(), type: 'default', enabled: true },
           { key: 'ENV_CODE', value: environmentConfig.envCode || 'dev', type: 'default', enabled: true },
           ...environmentConfig.variables.map(v => ({
@@ -563,25 +567,15 @@ const RequestBuilder = () => {
             type: 'default',
             enabled: true
           }))
-        ],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      })
-
-      // Persist to localStorage
-      const saved = localStorage.getItem('webhook_environments')
-      const existing = saved ? JSON.parse(saved) : []
-      const updated = [...existing, env]
-      localStorage.setItem('webhook_environments', JSON.stringify(updated))
-
-      // Update local state
-      setEnvironments(updated)
-      setCurrentEnvironment(env)
+        ]
+      )
 
       setShowEnvironmentConfig(false)
       setEnvironmentConfig({ name: '', baseUrl: '', envCode: 'dev', role: 'client', variables: [] })
     }
   }
+
+
 
   const addEnvironmentVariable = () => {
     setEnvironmentConfig(prev => ({
@@ -649,18 +643,28 @@ const RequestBuilder = () => {
         position: 'absolute',
         top: '100%',
         left: 0,
-        right: 0,
         background: 'var(--bg-primary)',
         border: '1px solid var(--border-color)',
-        borderRadius: '6px',
-        boxShadow: 'var(--shadow-lg)',
+        borderRadius: '12px',
+        boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4), 0 8px 16px rgba(0, 0, 0, 0.2)',
         zIndex: 1000,
-        maxHeight: '400px',
+        maxHeight: '280px',
         overflowY: 'auto',
-        minWidth: '300px'
+        minWidth: '280px',
+        maxWidth: '320px',
+        marginTop: '8px',
+        scrollbarWidth: 'thin',
+        scrollbarColor: 'var(--border-color) var(--bg-primary)',
+        backdropFilter: 'blur(15px)'
       }}>
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
-          <div style={{ fontWeight: '600', marginBottom: '4px' }}>Environment</div>
+        <div style={{ 
+          padding: '12px 16px', 
+          borderBottom: '1px solid var(--border-color)',
+          background: 'var(--bg-secondary)',
+          borderTopLeftRadius: '8px',
+          borderTopRightRadius: '8px'
+        }}>
+          <div style={{ fontWeight: '600', marginBottom: '4px', color: 'var(--text-primary)' }}>Environment</div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
             Select environment to use variables
           </div>
@@ -674,62 +678,122 @@ const RequestBuilder = () => {
             padding: '12px 16px',
             cursor: 'pointer',
             borderBottom: '1px solid var(--border-color)',
-            transition: 'background-color 0.2s ease',
+            transition: 'all 0.2s ease',
             background: currentEnvironment === null ? 'var(--primary-color)' : 'var(--bg-primary)',
-            color: currentEnvironment === null ? 'white' : 'var(--text-primary)'
+            color: currentEnvironment === null ? 'white' : 'var(--text-primary)',
+            position: 'relative'
           }}
           onMouseEnter={(e) => {
             if (currentEnvironment !== null) {
               e.target.style.background = 'var(--bg-tertiary)'
+              e.target.style.transform = 'translateX(2px)'
             }
           }}
           onMouseLeave={(e) => {
             if (currentEnvironment !== null) {
               e.target.style.background = 'var(--bg-primary)'
+              e.target.style.transform = 'translateX(0)'
             }
           }}
         >
-          <div style={{ fontWeight: '600', marginBottom: '4px' }}>
-            🌍 No Environment
+          <div style={{ fontWeight: '600', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>🌍</span>
+            <span>No Environment</span>
+            {currentEnvironment === null && (
+              <span style={{ fontSize: '12px', opacity: 0.8, marginLeft: 'auto' }}>✓</span>
+            )}
           </div>
-          <div style={{ fontSize: '12px', opacity: 0.8 }}>
+          <div style={{ fontSize: '12px', opacity: 0.8, marginLeft: '24px' }}>
             Use no environment variables
           </div>
         </div>
 
-                 {/* Available Environments */}
-         {environments.map((env) => (
-           <div
-             key={env.id}
-             className="environment-item"
-             onClick={() => handleEnvironmentSelect(env)}
-             style={{
-               padding: '12px 16px',
-               cursor: 'pointer',
-               borderBottom: '1px solid var(--border-color)',
-               transition: 'background-color 0.2s ease',
-               background: currentEnvironment?.id === env.id ? 'var(--primary-color)' : 'var(--bg-primary)',
-               color: currentEnvironment?.id === env.id ? 'white' : 'var(--text-primary)'
-             }}
-             onMouseEnter={(e) => {
-               if (currentEnvironment?.id !== env.id) {
-                 e.target.style.background = 'var(--bg-tertiary)'
-               }
-             }}
-             onMouseLeave={(e) => {
-               if (currentEnvironment?.id !== env.id) {
-                 e.target.style.background = 'var(--bg-primary)'
-               }
-             }}
-           >
-             <div style={{ fontWeight: '600', marginBottom: '4px' }}>
-               🌍 {env.name}
-             </div>
-             <div style={{ fontSize: '12px', opacity: 0.8 }}>
-               {env.variables.filter(v => v.enabled).length} active variables
-             </div>
-           </div>
-         ))}
+                {/* Available Environments */}
+        {environments && environments.length > 0 ? (
+          environments.map((env) => (
+            <div
+              key={env.id}
+              className="environment-item"
+              onClick={() => handleEnvironmentSelect(env)}
+              style={{
+                padding: '12px 16px',
+                cursor: 'pointer',
+                borderBottom: '1px solid var(--border-color)',
+                transition: 'all 0.2s ease',
+                background: currentEnvironment?.id === env.id ? 'var(--primary-color)' : 'var(--bg-primary)',
+                color: currentEnvironment?.id === env.id ? 'white' : 'var(--text-primary)',
+                position: 'relative'
+              }}
+              onMouseEnter={(e) => {
+                if (currentEnvironment?.id !== env.id) {
+                  e.target.style.background = 'var(--bg-tertiary)'
+                  e.target.style.transform = 'translateX(2px)'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (currentEnvironment?.id !== env.id) {
+                  e.target.style.background = 'var(--bg-primary)'
+                  e.target.style.transform = 'translateX(0)'
+                }
+              }}
+            >
+              <div style={{ fontWeight: '600', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🌍</span>
+                <span>{env.name}</span>
+                {currentEnvironment?.id === env.id && (
+                  <span style={{ fontSize: '12px', opacity: 0.8, marginLeft: 'auto' }}>✓</span>
+                )}
+              </div>
+              <div style={{ fontSize: '12px', opacity: 0.8, marginLeft: '24px' }}>
+                {env.variables.filter(v => v.enabled).length} active variables
+              </div>
+            </div>
+          ))
+        ) : (
+          <div style={{ 
+            padding: '12px 16px', 
+            color: 'var(--text-muted)', 
+            fontSize: '12px',
+            textAlign: 'center',
+            borderBottom: '1px solid var(--border-color)'
+          }}>
+            No environments created yet
+          </div>
+        )}
+
+        {/* Create New Environment Option */}
+        <div
+          className="environment-item"
+          onClick={() => {
+            setShowEnvironment(false)
+            setShowEnvironmentConfig(true)
+          }}
+          style={{
+            padding: '12px 16px',
+            cursor: 'pointer',
+            borderTop: '1px solid var(--border-color)',
+            transition: 'all 0.2s ease',
+            background: 'var(--bg-primary)',
+            color: 'var(--text-primary)',
+            position: 'relative'
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = 'var(--bg-tertiary)'
+            e.target.style.transform = 'translateX(2px)'
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = 'var(--bg-primary)'
+            e.target.style.transform = 'translateX(0)'
+          }}
+        >
+          <div style={{ fontWeight: '600', marginBottom: '4px', color: 'var(--primary-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>➕</span>
+            <span>Create New Environment</span>
+          </div>
+          <div style={{ fontSize: '12px', opacity: 0.8, marginLeft: '24px' }}>
+            Add a new environment with variables
+          </div>
+        </div>
 
         {/* Quick Actions */}
         <div style={{ 
@@ -790,10 +854,20 @@ const RequestBuilder = () => {
         return (
           <textarea
             className="form-input"
-            rows="16"
+            rows="20"
             value={requestData.body}
             onChange={(e) => handleBodyChange(e.target.value)}
             placeholder="Enter JSON body"
+            style={{
+              minHeight: '300px',
+              maxHeight: '600px',
+              resize: 'vertical',
+              overflowY: 'auto',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '13px',
+              lineHeight: '1.4',
+              cursor: 'text'
+            }}
           />
         )
       case BODY_FORMAT_TYPES.XML:
@@ -951,7 +1025,7 @@ const RequestBuilder = () => {
               fontSize: '14px',
               color: 'var(--text-muted)'
             }}>
-              <strong>Backend Integration:</strong> The token will be automatically added as "Authorization: Bearer {token}" header.
+              <strong>Backend Integration:</strong> The token will be automatically added as "Authorization: Bearer {authConfig.bearerToken.token || '[TOKEN]'}" header.
             </div>
           </div>
         )
@@ -988,7 +1062,7 @@ const RequestBuilder = () => {
               fontSize: '14px',
               color: 'var(--text-muted)'
             }}>
-              <strong>Backend Integration:</strong> Credentials will be automatically encoded and added as "Authorization: Basic {base64}" header.
+              <strong>Backend Integration:</strong> Credentials will be automatically encoded and added as "Authorization: Basic [BASE64_ENCODED]" header.
             </div>
           </div>
         )
@@ -1000,35 +1074,49 @@ const RequestBuilder = () => {
 
   return (
     <>
-      {/* URL Bar - Compact Postman Style */}
-      <div className="request-section">
+      {/* URL Bar - Always Visible */}
+      <div className="request-section" style={{ 
+        marginBottom: '16px',
+        display: 'block',
+        visibility: 'visible',
+        opacity: 1,
+        position: 'relative',
+        zIndex: 1
+      }}>
         <div className="section-header">
           <span>Request URL</span>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
-              className="btn btn-secondary"
-              onClick={() => setShowEnvironment(!showEnvironment)}
-              style={{ position: 'relative' }}
-            >
-              🌍 Environment
-              {currentEnvironment && currentEnvironment.variables && currentEnvironment.variables.filter(v => v.enabled).length > 0 && (
-                <span style={{
-                  position: 'absolute',
-                  top: '-4px',
-                  right: '-4px',
-                  background: 'var(--success-color)',
-                  color: 'white',
-                  fontSize: '10px',
-                  padding: '2px 4px',
-                  borderRadius: '8px',
-                  minWidth: '16px',
-                  textAlign: 'center'
-                }}>
-                  {currentEnvironment.variables.filter(v => v.enabled).length}
-                </span>
-              )}
+            <div style={{ position: 'relative' }}>
+              <button 
+                className="btn btn-secondary"
+                onClick={() => setShowEnvironment(!showEnvironment)}
+                style={{ 
+                  position: 'relative',
+                  minWidth: '140px',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <span>🌍 {currentEnvironment ? currentEnvironment.name : 'Environment'}</span>
+                <span style={{ fontSize: '12px' }}>▼</span>
+                {currentEnvironment && currentEnvironment.variables && currentEnvironment.variables.filter(v => v.enabled).length > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-4px',
+                    background: 'var(--success-color)',
+                    color: 'white',
+                    fontSize: '10px',
+                    padding: '2px 4px',
+                    borderRadius: '8px',
+                    minWidth: '16px',
+                    textAlign: 'center'
+                  }}>
+                    {currentEnvironment.variables.filter(v => v.enabled).length}
+                  </span>
+                )}
+              </button>
               {renderEnvironmentDropdown()}
-            </button>
+            </div>
             <button 
               className="btn btn-secondary"
               onClick={() => setShowSaveDialog(true)}
@@ -1045,7 +1133,7 @@ const RequestBuilder = () => {
             )}
           </div>
         </div>
-        <div className="section-content">
+        <div className="section-content" style={{ padding: '20px' }}>
           {renderValidationErrors()}
           <div className="url-bar" style={{ 
             display: 'flex', 
@@ -1056,7 +1144,8 @@ const RequestBuilder = () => {
             borderRadius: '8px',
             border: '1px solid var(--border-color)',
             overflow: 'hidden',
-            minHeight: '48px'
+            minHeight: '48px',
+            marginBottom: '24px'
           }}>
             <select 
               className="form-select url-method"
@@ -1092,7 +1181,7 @@ const RequestBuilder = () => {
                    width: '100%',
                    padding: '12px 16px',
                    borderRadius: '0',
-                   border: '2px solid var(--primary-color)',
+                   border: 'none',
                    background: 'var(--bg-primary)',
                    color: 'var(--text-primary)',
                    fontSize: '14px',
@@ -1106,7 +1195,7 @@ const RequestBuilder = () => {
                {currentEnvironment && currentEnvironment.variables && currentEnvironment.variables.filter(v => v.enabled).length > 0 && (
                  <div style={{
                    position: 'absolute',
-                   bottom: '-18px',
+                   bottom: '-20px',
                    left: '0',
                    fontSize: '11px',
                    color: 'var(--success-color)',
@@ -1115,7 +1204,22 @@ const RequestBuilder = () => {
                    Using {currentEnvironment.variables.filter(v => v.enabled).length} environment variables
                  </div>
                )}
+               {requestData.url && requestData.url !== requestData.url.trim() && (
+                 <div style={{
+                   position: 'absolute',
+                   bottom: '-20px',
+                   right: '0',
+                   fontSize: '11px',
+                   color: 'var(--warning-color)',
+                   fontWeight: '500'
+                 }}>
+                   URL cleaned automatically
              </div>
+               )}
+              </div>
+              
+
+            
             <button 
               className={`btn btn-success ${isLoading ? 'disabled' : ''}`}
               onClick={sendRequest}
@@ -1141,7 +1245,15 @@ const RequestBuilder = () => {
       </div>
 
       {/* Request Tabs */}
-      <div className="request-section">
+      <div className="request-section" style={{ 
+        marginBottom: '16px',
+        display: 'block',
+        visibility: 'visible',
+        opacity: 1,
+        minHeight: '200px',
+        position: 'relative',
+        zIndex: 1
+      }}>
         <div className="request-tabs">
           <button 
             className={`request-tab ${activeRequestTab === REQUEST_TAB_TYPES.BODY ? 'active' : ''}`}
@@ -1801,6 +1913,72 @@ const RequestBuilder = () => {
                 placeholder="Enter description (optional)"
               />
             </div>
+            
+            {/* Current Configuration Summary */}
+            <div style={{ marginBottom: '16px' }}>
+              <label className="form-label" style={{ marginBottom: '8px', display: 'block' }}>
+                ⚙️ Current Configuration
+              </label>
+              <div style={{
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                padding: '12px',
+                fontSize: '12px',
+                color: 'var(--text-secondary)'
+              }}>
+                <div><strong>Method:</strong> {requestData.method || 'GET'}</div>
+                <div><strong>URL:</strong> {requestData.url || 'Not set'}</div>
+                <div><strong>Auth Type:</strong> {authType ? authType.replace('-', ' ').toUpperCase() : 'NO AUTH'}</div>
+                <div><strong>Environment:</strong> {currentEnvironment?.name || 'None'}</div>
+                <div><strong>Headers:</strong> {requestData.headers?.length || 0}</div>
+                <div><strong>Parameters:</strong> {requestData.params?.length || 0}</div>
+              </div>
+            </div>
+            
+            {/* Preview of new format */}
+            <div style={{ marginBottom: '24px' }}>
+              <label className="form-label" style={{ marginBottom: '8px', display: 'block' }}>
+                📋 Payload Preview (New Format)
+              </label>
+              <div style={{
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                padding: '12px',
+                fontSize: '12px',
+                fontFamily: 'monospace',
+                maxHeight: '200px',
+                overflowY: 'auto',
+                color: 'var(--text-secondary)'
+              }}>
+                {(() => {
+                  try {
+                    const preview = buildNewFormatPayload(
+                      requestData, 
+                      saveName.trim() || 'Request Name', 
+                      saveDescription.trim() || '', 
+                      currentEnvironment, 
+                      environments, 
+                      authType, 
+                      authConfig
+                    )
+                    return JSON.stringify(preview, null, 2)
+                  } catch (error) {
+                    return 'Error generating preview...'
+                  }
+                })()}
+              </div>
+              <div style={{ 
+                fontSize: '11px', 
+                color: 'var(--text-muted)', 
+                marginTop: '4px',
+                fontStyle: 'italic'
+              }}>
+                This is the format that will be sent to the backend
+              </div>
+            </div>
+            
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button 
                 className="btn btn-secondary"

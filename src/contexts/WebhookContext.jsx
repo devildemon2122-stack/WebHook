@@ -3,8 +3,9 @@ import { createWebhookRequest, DEFAULTS } from '../utils/constants'
 import { validateRequest } from '../utils/validation'
 import { REQUEST_TEMPLATES, applyTemplate } from '../utils/templates'
 import { RequestHistoryService, SavedRequestsService } from '../utils/storage'
-import { buildSavePayload } from '../utils/payloads'
+import { buildSavePayload, buildNewFormatPayload, validateNewFormatPayload } from '../utils/payloads'
 import { apiSaveRequest, apiFetchCollections, apiFetchCollectionItems, apiFetchLogs, apiFetchLogsByWebhook } from '../services/api'
+import { sendHttpRequest } from '../services/httpService'
 
 // Webhook context interface
 const WebhookContext = createContext()
@@ -84,14 +85,23 @@ export const WebhookProvider = ({ children }) => {
     return savedRequest
   }, [requestData])
 
-  const saveRequestToBackend = useCallback(async (name, description = '') => {
+  const saveRequestToBackend = useCallback(async (name, description = '', currentEnvironment, allEnvironments, authType, authConfig) => {
     const validation = validateRequest(requestData)
     if (!validation.isValid) {
       setValidationErrors(validation.errors)
       return { success: false, errors: validation.errors }
     }
     try {
-      const payload = buildSavePayload(requestData, name, description)
+      // Use the new format as specified by the lead
+      const payload = buildNewFormatPayload(requestData, name, description, currentEnvironment, allEnvironments, authType, authConfig)
+      
+      // Validate the new format payload
+      const validation = validateNewFormatPayload(payload)
+      if (!validation.isValid) {
+        console.error('New format payload validation failed:', validation.errors)
+        return { success: false, errors: validation.errors }
+      }
+      
       const data = await apiSaveRequest(payload)
       return { success: true, data }
     } catch (error) {
@@ -138,7 +148,7 @@ export const WebhookProvider = ({ children }) => {
     return success
   }, [])
 
-  // Send webhook request (unchanged)
+  // Send webhook request with real HTTP calls
   const sendRequest = useCallback(async () => {
     const validation = validateRequest(requestData)
     if (!validation.isValid) {
@@ -147,30 +157,40 @@ export const WebhookProvider = ({ children }) => {
     }
     setIsLoading(true)
     setValidationErrors([])
-    const startTime = Date.now()
     try {
-      const mockResponse = await new Promise((resolve, reject) => {
-        setTimeout(() => {
-          const random = Math.random()
-          if (random < 0.1) reject(new Error('Network error: Failed to connect to server'))
-          else if (random < 0.2) resolve({ status: 400, statusText: 'Bad Request', headers: { 'content-type': 'application/json', 'x-error-code': 'VALIDATION_ERROR' }, body: JSON.stringify({ error: 'Bad Request', message: 'Invalid request parameters', details: ['URL format is invalid', 'Missing required headers'] }, null, 2) })
-          else if (random < 0.3) resolve({ status: 500, statusText: 'Internal Server Error', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ error: 'Internal Server Error', message: 'Something went wrong on our end' }, null, 2) })
-          else resolve({ status: 200, statusText: 'OK', headers: { 'content-type': 'application/json', 'x-webhook-id': `wh_${Date.now()}`, 'x-response-time': '150ms', 'x-request-id': `req_${Math.random().toString(36).substr(2, 9)}` }, body: JSON.stringify({ success: true, message: 'Webhook sent successfully', timestamp: new Date().toISOString(), id: `wh_${Date.now()}`, metadata: { method: requestData.method, url: requestData.url, headers_count: requestData.headers.length, params_count: requestData.params.length } }, null, 2) })
-        }, 500 + Math.random() * 1000)
-      })
-      const responseTime = Date.now() - startTime
-      setResponse(mockResponse)
-      const historyEntry = RequestHistoryService.add(requestData, mockResponse, responseTime)
+      // Use the real HTTP service instead of mock
+      const result = await sendHttpRequest(requestData)
+      
+      if (result.success) {
+        setResponse(result.response)
+        const historyEntry = RequestHistoryService.add(requestData, result.response, result.responseTime)
+        setRequestHistory(prev => [historyEntry, ...prev].slice(0, DEFAULTS.MAX_HISTORY_ITEMS))
+        return { success: true, response: result.response, responseTime: result.responseTime }
+      } else {
+        setResponse(result.response)
+        const historyEntry = RequestHistoryService.add(requestData, result.response, result.responseTime)
       setRequestHistory(prev => [historyEntry, ...prev].slice(0, DEFAULTS.MAX_HISTORY_ITEMS))
-      return { success: true, response: mockResponse, responseTime }
+        return { success: false, error: result.error, responseTime: result.responseTime }
+      }
     } catch (error) {
-      const responseTime = Date.now() - startTime
-      const errorResponse = { status: 0, statusText: 'Network Error', headers: {}, body: JSON.stringify({ error: 'Network Error', message: error.message, timestamp: new Date().toISOString() }, null, 2) }
+      const responseTime = Date.now()
+      const errorResponse = { 
+        status: 0, 
+        statusText: 'Request Error', 
+        headers: {}, 
+        body: JSON.stringify({ 
+          error: 'Request Error', 
+          message: error.message || 'An unexpected error occurred', 
+          timestamp: new Date().toISOString() 
+        }, null, 2) 
+      }
       setResponse(errorResponse)
       const historyEntry = RequestHistoryService.add(requestData, errorResponse, responseTime)
       setRequestHistory(prev => [historyEntry, ...prev].slice(0, DEFAULTS.MAX_HISTORY_ITEMS))
       return { success: false, error: error.message, responseTime }
-    } finally { setIsLoading(false) }
+    } finally { 
+      setIsLoading(false) 
+    }
   }, [requestData])
 
   // Collections and Logs wrappers using services
