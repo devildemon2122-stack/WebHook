@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rt-webhook-ui
+  namespace: dev-9x-rt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rt-webhook-ui
+  template:
+    metadata:
+      labels:
+        app: rt-webhook-ui
+    spec:
+      containers:
+        - name: webhook-ui
+          image: 10.22.1.62:30002/dev_rt/rt_webhook_ui:11.2
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+      imagePullSecrets:
+        - name: harbor-secret
+      schedulerName: default-scheduler
