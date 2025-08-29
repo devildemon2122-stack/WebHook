@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: webhook-ui
-          image: 10.22.1.62:30002/dev_rt/rt_webhook_ui:11.2
+          image: 10.22.1.62:30002/dev_rt/rt_webhook_ui:11.3
           imagePullPolicy: Always
           ports:
             - containerPort: 80
