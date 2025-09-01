@@ -22,6 +22,7 @@ const Logs = () => {
       const data = await apiFetchLogs({ page: pageNumber, limit })
       // Handle both { success, data: { logs, pagination } } and direct { logs, pagination }
       const payload = data?.data || data || {}
+      console.log(payload)
       const fetchedLogs = payload.logs || []
       const pagination = payload.pagination || {}
 

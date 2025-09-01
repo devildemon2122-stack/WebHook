@@ -188,20 +188,25 @@ export const buildNewFormatPayload = (requestData, name, description, currentEnv
   }
   
   // Generate tenant ID (you might want to make this configurable)
-  const tenantId = `T${Date.now().toString().slice(-6)}`
+  // const tenantId = `T${Date.now().toString().slice(-6)}`
+  //  const tenantId = `+${Date.now().toString().slice(-6)}`
+  const tenantId = 1;
   
   const payload = {
     name: name?.trim() || 'Unnamed Webhook',
+    parentId: 0,
     endpoint: requestData.url || '',
     method: requestData.method || 'GET',
     authType: authType ? authType.toUpperCase().replace('-', '_') : 'NO_AUTH',
-    tenantId: tenantId,
+    tenant: {
+      id: tenantId,
+    },
     webhookParams: webhookParams,
     environments: environments
   }
   
   // Log the payload for debugging (remove this in production)
-  console.log('New Format Payload:', JSON.stringify(payload, null, 2))
+  // console.log('New Format Payload:', JSON.stringify(payload, null, 2))
   
   return payload
 }
@@ -230,7 +235,7 @@ export const validateNewFormatPayload = (payload) => {
     errors.push('Auth type is required')
   }
   
-  if (!payload.tenantId || !payload.tenantId.trim()) {
+  if (!payload.tenant || !payload.tenant.trim()) {
     errors.push('Tenant ID is required')
   }
   
