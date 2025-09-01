@@ -3,8 +3,8 @@ import { createWebhookRequest, DEFAULTS } from '../utils/constants'
 import { validateRequest } from '../utils/validation'
 import { REQUEST_TEMPLATES, applyTemplate } from '../utils/templates'
 import { RequestHistoryService, SavedRequestsService } from '../utils/storage'
-import { buildSavePayload, buildNewFormatPayload, validateNewFormatPayload } from '../utils/payloads'
-import { apiSaveRequest, apiFetchCollections, apiFetchCollectionItems, apiFetchLogs, apiFetchLogsByWebhook } from '../services/api'
+import { buildNewFormatPayload, validateNewFormatPayload } from '../utils/payloads'
+import { createWebhookApi, updateWebhookApi, getWebhookApiById, getAllWebhookApis, deleteWebhookApi, getLogsByWebhookId, getLogsByRefId, getLogsByParentId, getLogsByDateRange } from '../services/webhookApiService'
 import { sendHttpRequest } from '../services/httpService'
 
 // Webhook context interface
@@ -93,7 +93,7 @@ export const WebhookProvider = ({ children }) => {
     }
     try {
       // Use the new format as specified by the lead
-      const payload = buildNewFormatPayload(requestData, name, description, currentEnvironment, allEnvironments, authType, authConfig)
+      const payload = buildNewFormatPayload(requestData, currentEnvironment, allEnvironments, authType, authConfig, name)
       
       // Validate the new format payload
       const validation = validateNewFormatPayload(payload)
@@ -102,7 +102,8 @@ export const WebhookProvider = ({ children }) => {
         return { success: false, errors: validation.errors }
       }
       
-      const data = await apiSaveRequest(payload)
+      // Create webhook API using backend service
+      const data = await createWebhookApi(payload)
       return { success: true, data }
     } catch (error) {
       return { success: false, error: error.message }
@@ -195,18 +196,31 @@ export const WebhookProvider = ({ children }) => {
 
   // Collections and Logs wrappers using services
   const fetchCollections = useCallback(async () => {
-    try { return { success: true, data: await apiFetchCollections() } } catch (e) { return { success: false, error: e.message } }
+    try { return { success: true, data: await getAllWebhookApis() } } catch (e) { return { success: false, error: e.message } }
   }, [])
   const fetchCollectionItems = useCallback(async (id) => {
-    if (!id) return { success: false, error: 'collectionId required' }
-    try { return { success: true, data: await apiFetchCollectionItems(id) } } catch (e) { return { success: false, error: e.message } }
+    if (!id) return { success: false, error: 'webhookId required' }
+    try { return { success: true, data: await getWebhookApiById(id) } } catch (e) { return { success: false, error: e.message } }
   }, [])
   const fetchLogs = useCallback(async (params = {}) => {
-    try { return { success: true, data: await apiFetchLogs(params) } } catch (e) { return { success: false, error: e.message } }
+    try { return { success: true, data: await getLogsByWebhookId(1) } } catch (e) { return { success: false, error: e.message } }
   }, [])
   const fetchLogsByWebhook = useCallback(async (webhookId, params = {}) => {
     if (!webhookId) return { success: false, error: 'webhookId required' }
-    try { return { success: true, data: await apiFetchLogsByWebhook(webhookId, params) } } catch (e) { return { success: false, error: e.message } }
+    try { return { success: true, data: await getLogsByWebhookId(webhookId) } } catch (e) { return { success: false, error: e.message } }
+  }, [])
+
+  // Additional webhook management functions
+  const updateWebhook = useCallback(async (id, webhookData) => {
+    try { return { success: true, data: await updateWebhookApi(id, webhookData) } } catch (e) { return { success: false, error: e.message } }
+  }, [])
+  
+  const deleteWebhook = useCallback(async (id) => {
+    try { return { success: true, data: await deleteWebhookApi(id) } } catch (e) { return { success: false, error: e.message } }
+  }, [])
+  
+  const getWebhookById = useCallback(async (id) => {
+    try { return { success: true, data: await getWebhookApiById(id) } } catch (e) { return { success: false, error: e.message } }
   }, [])
 
   const value = {
@@ -240,7 +254,10 @@ export const WebhookProvider = ({ children }) => {
     fetchCollections,
     fetchCollectionItems,
     fetchLogs,
-    fetchLogsByWebhook
+    fetchLogsByWebhook,
+    updateWebhook,
+    deleteWebhook,
+    getWebhookById
   }
 
   return (

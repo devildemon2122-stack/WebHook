@@ -9,6 +9,7 @@ import Logs from './Logs'
 
 const CollectionsView = React.lazy(() => import('./CollectionsView.jsx'))
 const EnvironmentView = React.lazy(() => import('./EnvironmentView.jsx'))
+const BackendTest = React.lazy(() => import('./BackendTest.jsx'))
 
 /**
  * AppLayout Component
@@ -48,6 +49,12 @@ const AppLayout = () => {
         return (
           <React.Suspense fallback={<div style={{ padding: '24px' }}>Loading…</div>}>
             <EnvironmentView />
+          </React.Suspense>
+        )
+      case 'backend-test':
+        return (
+          <React.Suspense fallback={<div style={{ padding: '24px' }}>Loading…</div>}>
+            <BackendTest />
           </React.Suspense>
         )
       default:

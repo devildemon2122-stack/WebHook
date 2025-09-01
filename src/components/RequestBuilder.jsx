@@ -466,14 +466,29 @@ const RequestBuilder = () => {
   const handleSaveRequest = async () => {
     if (!saveName.trim()) return
 
+    // Ensure all parameters are defined before calling the function
+    const safeCurrentEnvironment = currentEnvironment || null
+    const safeEnvironments = Array.isArray(environments) ? environments : []
+    const safeAuthType = authType || 'no-auth'
+    const safeAuthConfig = authConfig || {}
+
+    console.log('Save request inputs:', {
+      name: saveName.trim(),
+      description: saveDescription.trim(),
+      currentEnvironment: !!safeCurrentEnvironment,
+      environments: safeEnvironments.length,
+      authType: safeAuthType,
+      authConfig: !!safeAuthConfig
+    })
+
     // Try backend save first with new format
     const apiResult = await saveRequestToBackend(
       saveName.trim(), 
       saveDescription.trim(),
-      currentEnvironment,
-      environments,
-      authType,
-      authConfig
+      safeCurrentEnvironment,
+      safeEnvironments,
+      safeAuthType,
+      safeAuthConfig
     )
     if (apiResult?.success) {
       setSaveName('')
@@ -1954,18 +1969,35 @@ const RequestBuilder = () => {
               }}>
                 {(() => {
                   try {
+                    // Ensure all parameters are defined before calling the function
+                    const safeRequestData = requestData || {}
+                    const safeCurrentEnvironment = currentEnvironment || null
+                    const safeEnvironments = Array.isArray(environments) ? environments : []
+                    const safeAuthType = authType || 'no-auth'
+                    const safeAuthConfig = authConfig || {}
+                    const safeName = saveName?.trim() || 'Webhook Request'
+                    
+                    console.log('Preview generation inputs:', {
+                      requestData: !!safeRequestData,
+                      currentEnvironment: !!safeCurrentEnvironment,
+                      environments: safeEnvironments.length,
+                      authType: safeAuthType,
+                      authConfig: !!safeAuthConfig,
+                      name: safeName
+                    })
+                    
                     const preview = buildNewFormatPayload(
-                      requestData, 
-                      saveName.trim() || 'Request Name', 
-                      saveDescription.trim() || '', 
-                      currentEnvironment, 
-                      environments, 
-                      authType, 
-                      authConfig
+                      safeRequestData, 
+                      safeCurrentEnvironment, 
+                      safeEnvironments, 
+                      safeAuthType, 
+                      safeAuthConfig,
+                      safeName
                     )
                     return JSON.stringify(preview, null, 2)
                   } catch (error) {
-                    return 'Error generating preview...'
+                    console.error('Preview generation error:', error)
+                    return `Error generating preview: ${error.message}`
                   }
                 })()}
               </div>

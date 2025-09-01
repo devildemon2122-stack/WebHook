@@ -5,7 +5,8 @@ export const NAVIGATION_TYPES = {
   REQUEST: 'request',
   COLLECTIONS: 'collections',
   ENVIRONMENT: 'environment',
-  LOGS: 'logs'
+  LOGS: 'logs',
+  BACKEND_TEST: 'backend-test'
 }
 
 // Navigation context interface
@@ -29,7 +30,8 @@ export const NavigationProvider = ({ children }) => {
     { id: NAVIGATION_TYPES.REQUEST, label: 'New Request', icon: '📝' },
     { id: NAVIGATION_TYPES.COLLECTIONS, label: 'Collections', icon: '📁' },
     { id: NAVIGATION_TYPES.ENVIRONMENT, label: 'Environment', icon: '🌍' },
-    { id: NAVIGATION_TYPES.LOGS, label: 'Logs', icon: '📊' }
+    { id: NAVIGATION_TYPES.LOGS, label: 'Logs', icon: '📊' },
+    { id: NAVIGATION_TYPES.BACKEND_TEST, label: 'Backend Test', icon: '🔧' }
   ]
 
   // Set active tab
