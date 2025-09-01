@@ -106,7 +106,25 @@ export const WebhookProvider = ({ children }) => {
       const data = await createWebhookApi(payload)
       return { success: true, data }
     } catch (error) {
-      return { success: false, error: error.message }
+      console.error('Backend save error:', error)
+      
+      // Enhanced error handling for network issues
+      if (error.message.includes('Network error') || error.message.includes('Request timeout')) {
+        return { 
+          success: false, 
+          error: error.message,
+          type: 'NETWORK_ERROR',
+          suggestion: 'Please check if the backend server is running at 10.22.1.98:8082',
+          details: 'The backend server appears to be offline or unreachable. You can save locally instead.'
+        }
+      } else {
+        return { 
+          success: false, 
+          error: error.message,
+          type: 'BACKEND_ERROR',
+          details: 'There was an issue with the backend server processing your request.'
+        }
+      }
     }
   }, [requestData])
 

@@ -52,6 +52,13 @@ const RequestBuilder = () => {
     variables: []
   })
   
+  // Backend connection status
+  const [backendStatus, setBackendStatus] = useState({
+    status: 'unknown',
+    lastError: null,
+    lastChecked: null
+  })
+  
   // Authentication state
   const [authType, setAuthType] = useState('no-auth')
   const [authConfig, setAuthConfig] = useState({
@@ -283,6 +290,13 @@ const RequestBuilder = () => {
     }
   }, [showEnvironment])
 
+  // Test backend connection when save dialog opens
+  useEffect(() => {
+    if (showSaveDialog) {
+      testBackendConnection()
+    }
+  }, [showSaveDialog])
+
   // Update headers when auth changes
   useEffect(() => {
     const newHeaders = [...requestData.headers]
@@ -481,27 +495,86 @@ const RequestBuilder = () => {
       authConfig: !!safeAuthConfig
     })
 
-    // Try backend save first with new format
-    const apiResult = await saveRequestToBackend(
-      saveName.trim(), 
-      saveDescription.trim(),
-      safeCurrentEnvironment,
-      safeEnvironments,
-      safeAuthType,
-      safeAuthConfig
-    )
-    if (apiResult?.success) {
-      setSaveName('')
-      setSaveDescription('')
-      setShowSaveDialog(false)
-      return
-    }
+    try {
+      // Try backend save first with new format
+      const apiResult = await saveRequestToBackend(
+        saveName.trim(), 
+        saveDescription.trim(),
+        safeCurrentEnvironment,
+        safeEnvironments,
+        safeAuthType,
+        safeAuthConfig
+      )
+      
+      if (apiResult?.success) {
+        // Success - show success message
+        alert(`✅ Webhook "${saveName.trim()}" saved successfully to backend!`)
+        setSaveName('')
+        setSaveDescription('')
+        setShowSaveDialog(false)
+        return
+      }
 
-    // Fallback to local save if backend not available
-      saveRequest(saveName.trim(), saveDescription.trim())
-      setSaveName('')
-      setSaveDescription('')
-      setShowSaveDialog(false)
+      // Handle different types of errors
+      if (apiResult?.type === 'NETWORK_ERROR') {
+        // Network error - show detailed message and offer fallback
+        const errorMessage = `❌ Backend Connection Failed!
+
+${apiResult.error}
+
+${apiResult.suggestion}
+
+${apiResult.details}
+
+Would you like to save locally instead?`
+        
+        const shouldFallback = confirm(errorMessage)
+        
+        if (shouldFallback) {
+          saveRequest(saveName.trim(), saveDescription.trim())
+          alert(`💾 Webhook "${saveName.trim()}" saved locally (backend unavailable)`)
+          setSaveName('')
+          setSaveDescription('')
+          setShowSaveDialog(false)
+          return
+        } else {
+          // User chose not to save locally
+          return
+        }
+      } else {
+        // Other backend errors
+        const errorMessage = `❌ Backend Error: ${apiResult?.error || 'Unknown error occurred'}
+
+${apiResult?.details || ''}
+
+Please try again later or contact your system administrator.`
+        alert(errorMessage)
+        return
+      }
+    } catch (error) {
+      console.error('Save request error:', error)
+      
+      // Unexpected error - offer local save as fallback
+      const errorMessage = `❌ Unexpected Error Occurred!
+
+${error.message || 'An unexpected error occurred while saving'}
+
+Would you like to save locally instead?`
+      
+      const shouldFallback = confirm(errorMessage)
+      
+      if (shouldFallback) {
+        try {
+          saveRequest(saveName.trim(), saveDescription.trim())
+          alert(`💾 Webhook "${saveName.trim()}" saved locally (error occurred)`)
+          setSaveName('')
+          setSaveDescription('')
+          setShowSaveDialog(false)
+        } catch (localError) {
+          alert(`❌ Failed to save locally: ${localError.message}`)
+        }
+      }
+    }
   }
 
   const handleTemplateSelect = (templateKey) => {
@@ -587,6 +660,53 @@ const RequestBuilder = () => {
 
       setShowEnvironmentConfig(false)
       setEnvironmentConfig({ name: '', baseUrl: '', envCode: 'dev', role: 'client', variables: [] })
+    }
+  }
+
+  // Test backend connection
+  const testBackendConnection = async () => {
+    try {
+      setBackendStatus(prev => ({ ...prev, status: 'checking' }))
+      
+      // Simple ping to test connectivity
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+      
+      const response = await fetch('http://10.22.1.98:8082/api/webhooks/api/getAll', {
+        method: 'GET',
+        signal: controller.signal
+      })
+      
+      clearTimeout(timeoutId)
+      
+      if (response.ok) {
+        setBackendStatus({
+          status: 'connected',
+          lastError: null,
+          lastChecked: new Date().toLocaleTimeString()
+        })
+      } else {
+        setBackendStatus({
+          status: 'error',
+          lastError: `HTTP ${response.status}: ${response.statusText}`,
+          lastChecked: new Date().toLocaleTimeString()
+        })
+      }
+    } catch (error) {
+      let errorMessage = 'Unknown error'
+      if (error.name === 'AbortError') {
+        errorMessage = 'Connection timeout (5s)'
+      } else if (error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION_TIMED_OUT')) {
+        errorMessage = 'Cannot connect to server'
+      } else {
+        errorMessage = error.message
+      }
+      
+      setBackendStatus({
+        status: 'error',
+        lastError: errorMessage,
+        lastChecked: new Date().toLocaleTimeString()
+      })
     }
   }
 
@@ -1929,6 +2049,56 @@ const RequestBuilder = () => {
               />
             </div>
             
+                         {/* Backend Connection Status */}
+             <div style={{ marginBottom: '16px' }}>
+               <label className="form-label" style={{ marginBottom: '8px', display: 'block' }}>
+                 🔌 Backend Connection Status
+               </label>
+               <div style={{
+                 background: 'var(--bg-tertiary)',
+                 border: '1px solid var(--border-color)',
+                 borderRadius: '6px',
+                 padding: '12px',
+                 fontSize: '12px',
+                 color: 'var(--text-secondary)'
+               }}>
+                 <div><strong>Server:</strong> 10.22.1.98:8082</div>
+                 <div><strong>Status:</strong> 
+                   <span style={{ 
+                     color: backendStatus.status === 'connected' ? 'var(--success-color)' : 
+                            backendStatus.status === 'error' ? 'var(--error-color)' : 
+                            backendStatus.status === 'checking' ? 'var(--warning-color)' : 'var(--text-muted)',
+                     fontWeight: '600'
+                   }}>
+                     {backendStatus.status === 'connected' ? '✅ Connected' :
+                      backendStatus.status === 'error' ? '❌ Error' :
+                      backendStatus.status === 'checking' ? '⏳ Checking...' : '❓ Unknown'}
+                   </span>
+                 </div>
+                 <div><strong>Note:</strong> If backend is unavailable, requests will be saved locally</div>
+                 {backendStatus.lastError && (
+                   <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--error-color)' }}>
+                     <strong>Last Error:</strong> {backendStatus.lastError}
+                   </div>
+                 )}
+                 {backendStatus.lastChecked && (
+                   <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                     <strong>Last Checked:</strong> {backendStatus.lastChecked}
+                   </div>
+                 )}
+                 <div style={{ marginTop: '12px' }}>
+                   <button 
+                     className="btn btn-secondary"
+                     onClick={testBackendConnection}
+                     disabled={backendStatus.status === 'checking'}
+                     style={{ fontSize: '11px', padding: '6px 12px' }}
+                   >
+                     {backendStatus.status === 'checking' ? 'Testing...' : 'Test Connection'}
+                   </button>
+                 </div>
+               </div>
+             </div>
+
             {/* Current Configuration Summary */}
             <div style={{ marginBottom: '16px' }}>
               <label className="form-label" style={{ marginBottom: '8px', display: 'block' }}>

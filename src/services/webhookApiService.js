@@ -10,19 +10,79 @@ const WEBHOOK_API_BASE = getWebhookApiBaseUrl()
 const LOG_API_BASE = getLogsApiBaseUrl()
 
 /**
+ * Test backend connectivity
+ * @returns {Promise<Object>} Connection test result
+ */
+export const testBackendConnection = async () => {
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+
+    const response = await fetch(`${WEBHOOK_API_BASE}/getAll`, {
+      method: 'GET',
+      signal: controller.signal
+    })
+
+    clearTimeout(timeoutId)
+
+    if (response.ok) {
+      return { 
+        success: true, 
+        message: 'Backend server is reachable and responding',
+        status: response.status
+      }
+    } else {
+      return { 
+        success: false, 
+        message: `Backend server responded with status: ${response.status}`,
+        status: response.status
+      }
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return { 
+        success: false, 
+        message: 'Connection timeout: Backend server is not responding within 5 seconds',
+        error: 'TIMEOUT'
+      }
+    } else if (error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION_TIMED_OUT')) {
+      return { 
+        success: false, 
+        message: 'Network error: Cannot connect to backend server at 10.22.1.98:8082',
+        error: 'NETWORK_ERROR',
+        details: 'Please check if the backend server is running and accessible from this network'
+      }
+    } else {
+      return { 
+        success: false, 
+        message: `Unexpected error: ${error.message}`,
+        error: 'UNKNOWN_ERROR'
+      }
+    }
+  }
+}
+
+/**
  * Create a new webhook API
  * @param {Object} webhookData - Webhook data in backend format
  * @returns {Promise<Object>} Created webhook object
  */
 export const createWebhookApi = async (webhookData) => {
   try {
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+
     const response = await fetch(`${WEBHOOK_API_BASE}/createApi`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(webhookData)
+      body: JSON.stringify(webhookData),
+      signal: controller.signal
     })
+
+    clearTimeout(timeoutId)
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
@@ -30,8 +90,13 @@ export const createWebhookApi = async (webhookData) => {
 
     return await response.json()
   } catch (error) {
-    console.error('Error creating webhook API:', error)
-    throw error
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout: Backend server is not responding within 10 seconds')
+    } else if (error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION_TIMED_OUT')) {
+      throw new Error('Network error: Cannot connect to backend server. Please check if the server is running at 10.22.1.98:8082')
+    } else {
+      throw new Error(`Backend error: ${error.message}`)
+    }
   }
 }
 
